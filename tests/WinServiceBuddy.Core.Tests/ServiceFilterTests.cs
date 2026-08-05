@@ -7,17 +7,17 @@ public class ServiceFilterTests
 {
     private static List<ServiceInfo> Sample() =>
     [
-        new() { ServiceName = "MilestoneRecording", DisplayName = "Milestone Recording Server", Status = "Running" },
-        new() { ServiceName = "EverbridgeAgent", DisplayName = "Everbridge Agent", Status = "Stopped" },
+        new() { ServiceName = "ProductRecording", DisplayName = "Product Recording Server", Status = "Running" },
+        new() { ServiceName = "ProductAgent", DisplayName = "Product Agent", Status = "Stopped" },
         new() { ServiceName = "Spooler", DisplayName = "Print Spooler", Status = "Running" }
     ];
 
     [Fact]
     public void BySubstring_Matches_ServiceName_Or_DisplayName()
     {
-        var result = ServiceFilter.BySubstring(Sample(), "milestone").ToList();
+        var result = ServiceFilter.BySubstring(Sample(), "recording").ToList();
         Assert.Single(result);
-        Assert.Equal("MilestoneRecording", result[0].ServiceName);
+        Assert.Equal("ProductRecording", result[0].ServiceName);
     }
 
     [Fact]
@@ -30,7 +30,7 @@ public class ServiceFilterTests
     [Fact]
     public void ByNames_IsCaseInsensitive()
     {
-        var result = ServiceFilter.ByNames(Sample(), ["spooler", "EVERBRIDGEAGENT"]).ToList();
+        var result = ServiceFilter.ByNames(Sample(), ["spooler", "PRODUCTAGENT"]).ToList();
         Assert.Equal(2, result.Count);
     }
 }
