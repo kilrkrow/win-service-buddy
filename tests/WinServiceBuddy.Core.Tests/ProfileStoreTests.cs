@@ -24,8 +24,8 @@ public class ProfileStoreTests
             var store = new ProfileStore(dir, dir);
             var profile = new ProductProfile
             {
-                Id = "everbridge-control-center",
-                Name = "Everbridge Control Center",
+                Id = "sample-product",
+                Name = "Sample Product",
                 Roles = ["Application Server", "Client Workstation"],
                 DefaultRoles = ["Application Server"],
                 Services =
@@ -87,18 +87,18 @@ public class ProfileStoreTests
             ],
             MatchRules =
             [
-                new ProfileMatchRule { Type = "substring", Value = "Mile", Roles = ["Application Server"] }
+                new ProfileMatchRule { Type = "substring", Value = "Prod", Roles = ["Application Server"] }
             ]
         };
 
         var live = new List<ServiceInfo>
         {
             new() { ServiceName = "ExplicitSvc", DisplayName = "Explicit" },
-            new() { ServiceName = "MilestoneX", DisplayName = "X" },
+            new() { ServiceName = "ProductX", DisplayName = "X" },
             new() { ServiceName = "Other", DisplayName = "Other" }
         };
 
         var names = store.ResolveServiceNames(profile, "Application Server", live).OrderBy(n => n).ToList();
-        Assert.Equal(["ExplicitSvc", "MilestoneX"], names);
+        Assert.Equal(["ExplicitSvc", "ProductX"], names);
     }
 }

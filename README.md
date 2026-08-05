@@ -83,13 +83,12 @@ Mutating commands (`start`, `stop`, `restart`, `set-startup`, `set-recovery`) re
 | Path | Purpose |
 |------|---------|
 | `profiles/examples/multi-tier-abstract-sample.wsb.json` | Schema v2 sample: roles + Production/Acceptance + ordered services |
-| `profiles/examples/substring-template.wsb.json` | Blank template |
-| `profiles/examples/*-sample.wsb.json` | Thin substring shells for import testing (not vendor docs) |
+| `profiles/examples/substring-template.wsb.json` | Blank template (set your product token) |
 
 **Environments** live inside one product file: same service list and order; different desired startup/recovery.
 
 ```text
-Product "Milestone XProtect"
+Product "Your Product"
   ├─ Environment Production  → Automatic + restart-3
   └─ Environment Acceptance  → Manual + none
 ```
