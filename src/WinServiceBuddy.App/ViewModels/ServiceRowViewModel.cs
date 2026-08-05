@@ -30,8 +30,9 @@ public partial class ServiceRowViewModel : ViewModelBase
 
     public bool HasDependencies => DependsOnServiceNames.Count > 0;
 
+    /// <summary>Column header is already "Deps"; show count only when present.</summary>
     public string DependenciesButtonLabel => HasDependencies
-        ? $"Deps ({DependsOnServiceNames.Count})"
+        ? DependsOnServiceNames.Count.ToString()
         : "—";
 
     public string StatusColor => Status.Equals("Running", StringComparison.OrdinalIgnoreCase)

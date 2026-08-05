@@ -39,7 +39,7 @@ public partial class MainViewModel : ViewModelBase
 
     public ObservableCollection<ServiceRowViewModel> Services { get; } = new();
     public ObservableCollection<string> PrerequisiteLines { get; } = new();
-    public ObservableCollection<string> DependencyLines { get; } = new();
+    public ObservableCollection<DependencyItemViewModel> DependencyItems { get; } = new();
     public ObservableCollection<string> AvailableProfiles { get; }
     public ObservableCollection<string> AvailableRoles { get; }
 
@@ -409,35 +409,100 @@ public partial class MainViewModel : ViewModelBase
         IsDependenciesPanelOpen = false;
     }
 
-    private void ReloadAvailableProfiles()
+    /// <summary>Select the dependency in the services table (when visible) and focus it.</summary>
+    [RelayCommand]
+    private void NavigateToDependency(DependencyItemViewModel? dep)
     {
-        AvailableProfiles.Clear();
-        _profilePathById.Clear();
+        if (dep is null)
+            return;
 
-        foreach (var (path, profile) in _profiles.ListProfiles())
+        if (string.Equals(dep.StatusKind, "Missing", StringComparison.OrdinalIgnoreCase))
         {
-            if (!AvailableProfiles.Contains(profile.Id))
-                AvailableProfiles.Add(profile.Id);
-            _profilePathById[profile.Id] = path;
+            StatusText = $"Dependency “{dep.Title}” is not installed on this machine.";
+            return;
         }
 
-        // Dev-time examples next to repo
+        var row = Services.FirstOrDefault(s =>
+            string.Equals(s.ServiceName, dep.ServiceName, StringComparison.OrdinalIgnoreCase));
+
+        if (row is null)
+        {
+            // Not in current filter/profile set — still try to surface it if SCM knows it.
+            var info = _services.GetService(dep.ServiceName);
+            if (info is null)
+            {
+                StatusText = $"Dependency “{dep.Title}” is not in the current list and was not found.";
+                return;
+            }
+
+            var lookup = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                [info.ServiceName] = info.DisplayName
+            };
+            foreach (var d in info.DependsOn)
+            {
+                var di = _services.GetService(d);
+                if (di is not null)
+                    lookup[d] = di.DisplayName;
+            }
+
+            row = new ServiceRowViewModel(info, lookup);
+            Services.Add(row);
+            StatusText = $"Opened “{row.Title}” (was outside the current filter/profile set).";
+        }
+        else
+        {
+            StatusText = $"Selected dependency “{row.Title}”.";
+        }
+
+        // Clear multi-check noise; highlight the navigated service
+        foreach (var s in Services)
+            s.IsSelected = false;
+        row.IsSelected = true;
+        FocusedService = row;
+        IsDependenciesPanelOpen = true;
+        UpdateDependenciesPanelContent();
+    }
+
+    /// <summary>Import sample profiles from the repo/examples folder into the user profile store (dev convenience).</summary>
+    [RelayCommand]
+    private void LoadSampleProfiles()
+    {
+        var imported = 0;
         foreach (var dir in EnumerateExampleProfileDirs())
         {
             foreach (var file in Directory.EnumerateFiles(dir, "*.wsb.json"))
             {
                 try
                 {
-                    var profile = _profiles.Load(file);
-                    if (!AvailableProfiles.Contains(profile.Id))
-                        AvailableProfiles.Add(profile.Id);
-                    _profilePathById[profile.Id] = file;
+                    _profiles.Import(file, machineScope: false);
+                    imported++;
                 }
                 catch
                 {
-                    // skip invalid samples
+                    // skip invalid
                 }
             }
+        }
+
+        ReloadAvailableProfiles();
+        StatusText = imported == 0
+            ? "No sample profiles found to import."
+            : $"Imported {imported} sample profile file(s).";
+    }
+
+    private void ReloadAvailableProfiles()
+    {
+        AvailableProfiles.Clear();
+        _profilePathById.Clear();
+
+        // Only installed/imported profiles — do NOT auto-list repo samples
+        // (otherwise "No profiles detected" never appears during local dev).
+        foreach (var (path, profile) in _profiles.ListProfiles())
+        {
+            if (!AvailableProfiles.Contains(profile.Id))
+                AvailableProfiles.Add(profile.Id);
+            _profilePathById[profile.Id] = path;
         }
 
         OnPropertyChanged(nameof(HasProfiles));
@@ -534,7 +599,7 @@ public partial class MainViewModel : ViewModelBase
 
     private void UpdateDependenciesPanelContent()
     {
-        DependencyLines.Clear();
+        DependencyItems.Clear();
 
         if (!IsDependenciesPanelOpen)
         {
@@ -560,8 +625,44 @@ public partial class MainViewModel : ViewModelBase
         }
 
         ShowDependenciesEmptyMessage = false;
-        foreach (var name in FocusedService.DependsOnDisplayNames)
-            DependencyLines.Add(name);
+        for (var i = 0; i < FocusedService.DependsOnServiceNames.Count; i++)
+        {
+            var svcName = FocusedService.DependsOnServiceNames[i];
+            var display = i < FocusedService.DependsOnDisplayNames.Count
+                ? FocusedService.DependsOnDisplayNames[i]
+                : svcName;
+
+            DependencyItems.Add(BuildDependencyItem(svcName, display));
+        }
+    }
+
+    private DependencyItemViewModel BuildDependencyItem(string serviceName, string displayName)
+    {
+        var info = _services.GetService(serviceName);
+        if (info is null)
+        {
+            return new DependencyItemViewModel
+            {
+                ServiceName = serviceName,
+                DisplayName = displayName,
+                StatusKind = "Missing"
+            };
+        }
+
+        var kind = info.StartupType == ServiceStartupType.Disabled
+            ? "Disabled"
+            : info.IsRunning
+                ? "Running"
+                : info.IsStopped
+                    ? "Stopped"
+                    : info.Status;
+
+        return new DependencyItemViewModel
+        {
+            ServiceName = info.ServiceName,
+            DisplayName = string.IsNullOrWhiteSpace(info.DisplayName) ? displayName : info.DisplayName,
+            StatusKind = kind
+        };
     }
 
     private static Dictionary<string, string> BuildDisplayNameLookup(IEnumerable<ServiceInfo> services)

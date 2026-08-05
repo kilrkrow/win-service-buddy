@@ -156,6 +156,10 @@
                                     <Button Classes="toolbar" Content="Use Simple mode"
                                             Command="{Binding UseSimpleModeCommand}"
                                             HorizontalAlignment="Stretch"/>
+                                    <Button Classes="toolbar" Content="Import sample profiles…"
+                                            Command="{Binding LoadSampleProfilesCommand}"
+                                            HorizontalAlignment="Stretch"
+                                            ToolTip.Tip="Copies repo sample .wsb.json files into your user profile folder (for trying Profile mode)."/>
                                 </StackPanel>
                             </Border>
 
@@ -235,16 +239,31 @@
                 </Border>
 
                 <!-- Collapsible dependencies panel -->
-                <Border Grid.Column="1" Classes="panel" Margin="12,0,0,0" Width="280"
+                <Border Grid.Column="1" Classes="panel" Margin="12,0,0,0" Width="300"
                         IsVisible="{Binding IsDependenciesPanelOpen}">
                     <DockPanel>
                         <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,8">
                             <TextBlock Classes="section" Text="{Binding DependenciesHeader}"
-                                       TextWrapping="Wrap" Margin="0"/>
-                            <Button Grid.Column="1" Classes="linkish" Content="Close"
+                                       TextWrapping="Wrap" Margin="0" VerticalAlignment="Center"/>
+                            <Button Grid.Column="1" Classes="linkish" Content="✕"
+                                    FontSize="16" FontWeight="Bold"
                                     Command="{Binding CloseDependenciesPanelCommand}"
-                                    VerticalAlignment="Top"/>
+                                    VerticalAlignment="Top"
+                                    ToolTip.Tip="Close dependencies panel"
+                                    Padding="10,4"/>
                         </Grid>
+
+                        <StackPanel DockPanel.Dock="Bottom" Margin="0,8,0,0" Spacing="2"
+                                    IsVisible="{Binding !ShowDependenciesEmptyMessage}">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <TextBlock FontSize="10"><Run Foreground="#3DDC97" Text="● Running"/></TextBlock>
+                                <TextBlock FontSize="10"><Run Foreground="#FF6B6B" Text="● Stopped"/></TextBlock>
+                                <TextBlock FontSize="10"><Run Foreground="#8B9AAB" Text="⊘ Disabled"/></TextBlock>
+                                <TextBlock FontSize="10"><Run Foreground="#F0C929" Text="! Missing"/></TextBlock>
+                            </StackPanel>
+                            <TextBlock Text="Click a dependency to select it in the table"
+                                       Foreground="#5C6B7A" FontSize="10"/>
+                        </StackPanel>
 
                         <TextBlock Text="{Binding DependenciesEmptyMessage}"
                                    IsVisible="{Binding ShowDependenciesEmptyMessage}"
@@ -255,10 +274,42 @@
                                    HorizontalAlignment="Center"
                                    Margin="12"/>
 
-                        <ListBox ItemsSource="{Binding DependencyLines}"
+                        <ListBox ItemsSource="{Binding DependencyItems}"
                                  IsVisible="{Binding !ShowDependenciesEmptyMessage}"
                                  Background="Transparent" BorderThickness="0"
-                                 Foreground="#C5D0DA" FontSize="13"/>
+                                 Foreground="#C5D0DA">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:DependencyItemViewModel">
+                                    <Button Background="Transparent" BorderThickness="0"
+                                            HorizontalAlignment="Stretch"
+                                            HorizontalContentAlignment="Left"
+                                            Padding="4,8"
+                                            Cursor="Hand"
+                                            Command="{Binding #Root.((vm:MainViewModel)DataContext).NavigateToDependencyCommand}"
+                                            CommandParameter="{Binding}"
+                                            ToolTip.Tip="{Binding ToolTip}">
+                                        <Grid ColumnDefinitions="Auto,*,Auto">
+                                            <TextBlock Text="{Binding StatusIcon}"
+                                                       Foreground="{Binding StatusBrush}"
+                                                       FontSize="14"
+                                                       VerticalAlignment="Center"
+                                                       Margin="0,0,10,0"/>
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{Binding Title}"
+                                                       TextWrapping="Wrap"
+                                                       Foreground="#E6EDF3"
+                                                       VerticalAlignment="Center"/>
+                                            <TextBlock Grid.Column="2"
+                                                       Text="{Binding StatusLabel}"
+                                                       Foreground="{Binding StatusBrush}"
+                                                       FontSize="11"
+                                                       VerticalAlignment="Center"
+                                                       Margin="8,0,0,0"/>
+                                        </Grid>
+                                    </Button>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
                     </DockPanel>
                 </Border>
             </Grid>
