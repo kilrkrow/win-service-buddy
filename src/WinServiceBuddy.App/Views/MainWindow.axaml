@@ -63,6 +63,43 @@
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Margin" Value="0,0,0,12"/>
         </Style>
+
+        <!-- Services grid: full-row highlight only — hide current-cell “currency” box -->
+        <Style Selector="DataGrid#ServicesGrid DataGridRow:selected /template/ Rectangle#BackgroundRectangle">
+            <Setter Property="Fill" Value="#1A3A40"/>
+        </Style>
+        <Style Selector="DataGrid#ServicesGrid DataGridRow:pointerover /template/ Rectangle#BackgroundRectangle">
+            <Setter Property="Fill" Value="#1A2830"/>
+        </Style>
+        <Style Selector="DataGrid#ServicesGrid DataGridRow:selected:pointerover /template/ Rectangle#BackgroundRectangle">
+            <Setter Property="Fill" Value="#1F454C"/>
+        </Style>
+        <Style Selector="DataGrid#ServicesGrid DataGridCell">
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="FocusAdorner" Value="{x:Null}"/>
+        </Style>
+        <!-- Avalonia draws the cell bounding box via CurrencyVisual -->
+        <Style Selector="DataGrid#ServicesGrid DataGridCell:current /template/ Rectangle#CurrencyVisual">
+            <Setter Property="IsVisible" Value="False"/>
+            <Setter Property="Opacity" Value="0"/>
+            <Setter Property="StrokeThickness" Value="0"/>
+            <Setter Property="Fill" Value="Transparent"/>
+        </Style>
+        <Style Selector="DataGrid#ServicesGrid DataGridCell /template/ Rectangle#CurrencyVisual">
+            <Setter Property="IsVisible" Value="False"/>
+            <Setter Property="Opacity" Value="0"/>
+        </Style>
+        <Style Selector="DataGrid#ServicesGrid DataGridCell /template/ Rectangle#FocusVisual">
+            <Setter Property="IsVisible" Value="False"/>
+            <Setter Property="Opacity" Value="0"/>
+        </Style>
+        <Style Selector="DataGrid#ServicesGrid DataGridCell:focus /template/ Rectangle#FocusVisual">
+            <Setter Property="IsVisible" Value="False"/>
+            <Setter Property="Opacity" Value="0"/>
+        </Style>
+        <Style Selector="DataGrid#ServicesGrid DataGridRow">
+            <Setter Property="FocusAdorner" Value="{x:Null}"/>
+        </Style>
     </Window.Styles>
 
     <DockPanel Margin="12">
