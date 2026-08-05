@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/WinServiceBuddy.App/WinServiceBuddy.App.csproj" />
+    <Project Path="src/WinServiceBuddy.Cli/WinServiceBuddy.Cli.csproj" />
+    <Project Path="src/WinServiceBuddy.Core/WinServiceBuddy.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/WinServiceBuddy.Core.Tests/WinServiceBuddy.Core.Tests.csproj" />
+  </Folder>
+</Solution>

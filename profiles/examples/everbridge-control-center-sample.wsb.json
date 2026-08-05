@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "id": "everbridge-control-center",
+  "name": "Everbridge Control Center",
+  "description": "SAMPLE profile — verify service names against your ECC build and vendor docs.",
+  "productVersionNote": "Illustrative only; not vendor-certified.",
+  "defaultRoles": [ "Server" ],
+  "roles": [ "Server", "Client" ],
+  "includeScmDependencies": true,
+  "dependencyDirection": "dependsOn",
+  "services": [
+    {
+      "serviceName": "EverbridgeNotificationSvc",
+      "roles": [ "Server" ],
+      "optional": false,
+      "desiredStartup": "Automatic",
+      "desiredRecovery": "restart-3"
+    }
+  ],
+  "matchRules": [
+    {
+      "type": "substring",
+      "value": "Everbridge",
+      "roles": [ "Server", "Client" ],
+      "comment": "Catch add-on services not listed explicitly"
+    }
+  ],
+  "prerequisites": [
+    {
+      "id": "msmq",
+      "title": "Message Queuing (MSMQ)",
+      "roles": [ "Server", "Client" ],
+      "checks": [
+        {
+          "type": "serviceExists",
+          "serviceName": "MSMQ",
+          "severity": "error"
+        },
+        {
+          "type": "serviceRunning",
+          "serviceName": "MSMQ",
+          "severity": "warn"
+        }
+      ],
+      "docRef": "Older Control Center builds required MSMQ on servers and clients (role-dependent)."
+    }
+  ],
+  "metadata": {
+    "author": "Win Service Buddy samples"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "substring-template",
+  "name": "Substring template",
+  "description": "Empty shell: set matchRules.value to your product token.",
+  "defaultRoles": [ "Server" ],
+  "roles": [ "Server", "Client" ],
+  "includeScmDependencies": true,
+  "services": [],
+  "matchRules": [
+    {
+      "type": "substring",
+      "value": "YourProductToken",
+      "roles": [ "Server", "Client" ]
+    }
+  ],
+  "prerequisites": [],
+  "metadata": {
+    "author": "Win Service Buddy samples"
+  }
+}

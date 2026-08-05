@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "milestone-xprotect-sample",
+  "name": "Milestone XProtect (sample)",
+  "description": "SAMPLE profile using substring match for Milestone services. Confirm names for your version.",
+  "productVersionNote": "Illustrative only; not vendor-certified.",
+  "defaultRoles": [ "Server" ],
+  "roles": [ "Server", "Client" ],
+  "includeScmDependencies": true,
+  "services": [],
+  "matchRules": [
+    {
+      "type": "substring",
+      "value": "Milestone",
+      "roles": [ "Server", "Client" ],
+      "comment": "Simple-mode equivalent baked into a shareable profile"
+    }
+  ],
+  "prerequisites": [],
+  "metadata": {
+    "author": "Win Service Buddy samples"
+  }
+}
