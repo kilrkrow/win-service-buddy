@@ -254,7 +254,20 @@
                                   Foreground="#E6EDF3"
                                   SelectionMode="Single">
                             <DataGrid.Columns>
-                                <DataGridCheckBoxColumn Header="" Binding="{Binding IsSelected, Mode=TwoWay}" Width="40"/>
+                                <!-- Template CheckBox (not DataGridCheckBoxColumn): single-click works;
+                                     DataGridCheckBoxColumn steals the first click for cell focus. -->
+                                <DataGridTemplateColumn Header="" Width="44">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate x:DataType="vm:ServiceRowViewModel">
+                                            <CheckBox Classes="service-check"
+                                                      IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                      HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center"
+                                                      Margin="4,0"
+                                                      ToolTip.Tip="Click to select · Shift+click for range"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
                                 <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100" IsReadOnly="True"/>
                                 <DataGridTextColumn Header="Display Name" Binding="{Binding Title}" Width="3*" IsReadOnly="True"/>
                                 <DataGridTextColumn Header="Startup" Binding="{Binding StartupType}" Width="130" IsReadOnly="True"/>

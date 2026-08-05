@@ -17,6 +17,9 @@ public partial class MainViewModel : ViewModelBase
     private readonly PrerequisiteEvaluator _prereqs;
     private readonly Dictionary<string, string> _profilePathById = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Index used as the Shift+click range anchor for checkbox multi-select.</summary>
+    private int _selectionAnchorIndex = -1;
+
     public MainViewModel()
         : this(new WindowsServiceManager(), new ProfileStore())
     {
@@ -252,6 +255,7 @@ public partial class MainViewModel : ViewModelBase
 
             // Clear without leaking PropertyChanged handlers
             ClearServices();
+            _selectionAnchorIndex = -1;
             foreach (var s in list)
                 Services.Add(new ServiceRowViewModel(s, lookup));
 
@@ -259,6 +263,9 @@ public partial class MainViewModel : ViewModelBase
                 ? null
                 : Services.FirstOrDefault(s =>
                     string.Equals(s.ServiceName, focusedName, StringComparison.OrdinalIgnoreCase));
+
+            if (FocusedService is not null)
+                _selectionAnchorIndex = Services.IndexOf(FocusedService);
 
             UpdateDependenciesPanelContent();
             NotifySelectionChanged();
@@ -321,6 +328,8 @@ public partial class MainViewModel : ViewModelBase
     {
         foreach (var s in Services)
             s.IsSelected = true;
+        if (Services.Count > 0)
+            _selectionAnchorIndex = 0;
         NotifySelectionChanged();
     }
 
@@ -330,6 +339,35 @@ public partial class MainViewModel : ViewModelBase
         foreach (var s in Services)
             s.IsSelected = false;
         NotifySelectionChanged();
+    }
+
+    /// <summary>
+    /// Checkbox / Shift+click selection for bulk actions.
+    /// Plain click: toggle this row and set the range anchor.
+    /// Shift+click: check every row from the anchor through this row (inclusive).
+    /// </summary>
+    public void ApplyCheckboxInteraction(ServiceRowViewModel row, bool shift)
+    {
+        var index = Services.IndexOf(row);
+        if (index < 0)
+            return;
+
+        if (shift && _selectionAnchorIndex >= 0 && _selectionAnchorIndex < Services.Count)
+        {
+            var from = Math.Min(_selectionAnchorIndex, index);
+            var to = Math.Max(_selectionAnchorIndex, index);
+            for (var i = from; i <= to; i++)
+                Services[i].IsSelected = true;
+        }
+        else
+        {
+            row.IsSelected = !row.IsSelected;
+            _selectionAnchorIndex = index;
+        }
+
+        FocusedService = row;
+        NotifySelectionChanged();
+        ScrollServiceIntoView?.Invoke(row);
     }
 
     private bool CanOperateOnSelection() => HasSelection;
