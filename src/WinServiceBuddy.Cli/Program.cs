@@ -14,7 +14,10 @@ var root = new RootCommand("Win Service Buddy — manage product Windows Service
 var jsonOption = new Option<bool>("--json") { Description = "Emit JSON instead of tables" };
 var substringOption = new Option<string?>("--substring", "-s") { Description = "Filter by service/display name substring" };
 var profileOption = new Option<string?>("--profile", "-p") { Description = "Profile id or path (.wsb.json)" };
-var roleOption = new Option<string>("--role", "-r") { Description = "Profile role", DefaultValueFactory = _ => "Server" };
+var roleOption = new Option<string?>("--role", "-r")
+{
+    Description = "Profile-defined role name (from the profile’s roles list; not a fixed client/server enum)"
+};
 
 // list
 var listCmd = new Command("list", "List services (simple substring or profile mode)");
@@ -125,7 +128,10 @@ prereqCheckCmd.SetAction(parse =>
         return 4;
     }
 
-    var role = parse.GetValue(roleOption) ?? "Server";
+    var role = parse.GetValue(roleOption)
+               ?? profile.DefaultRoles.FirstOrDefault()
+               ?? profile.Roles.FirstOrDefault()
+               ?? "(all)";
     var evaluator = new PrerequisiteEvaluator(manager);
     var results = evaluator.Evaluate(profile, role);
     if (parse.GetValue(jsonOption))
@@ -340,7 +346,11 @@ static List<ServiceInfo> ResolveServices(
     {
         var profile = store.FindById(profileId) ?? store.Load(profileId);
         var live = manager.GetServices();
-        var names = store.ResolveServiceNames(profile, role ?? "Server", live).ToList();
+        var resolvedRole = role
+                           ?? profile.DefaultRoles.FirstOrDefault()
+                           ?? profile.Roles.FirstOrDefault()
+                           ?? "(all)";
+        var names = store.ResolveServiceNames(profile, resolvedRole, live).ToList();
 
         if (profile.IncludeScmDependencies)
         {

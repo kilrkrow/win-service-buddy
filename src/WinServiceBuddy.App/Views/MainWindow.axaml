@@ -5,6 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d" d:DesignWidth="1280" d:DesignHeight="800"
         x:Class="WinServiceBuddy.App.Views.MainWindow"
+        x:Name="Root"
         x:DataType="vm:MainViewModel"
         Width="1280" Height="800"
         MinWidth="960" MinHeight="600"
@@ -31,6 +32,16 @@
             <Setter Property="Foreground" Value="#0B1215"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
         </Style>
+        <Style Selector="Button.linkish">
+            <Setter Property="Padding" Value="8,4"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#5EEAD4"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+        <Style Selector="Button.linkish:disabled">
+            <Setter Property="Foreground" Value="#3A4654"/>
+        </Style>
         <Style Selector="TextBlock.section">
             <Setter Property="Foreground" Value="#8B9AAB"/>
             <Setter Property="FontSize" Value="12"/>
@@ -44,12 +55,57 @@
             <Setter Property="BorderBrush" Value="#243040"/>
             <Setter Property="BorderThickness" Value="1"/>
         </Style>
+        <Style Selector="Border.help">
+            <Setter Property="Background" Value="#1A2430"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="Padding" Value="10"/>
+            <Setter Property="BorderBrush" Value="#2E4050"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Margin" Value="0,0,0,12"/>
+        </Style>
+
+        <!-- Services grid: full-row highlight only — no per-cell focus box -->
+        <Style Selector="DataGrid#ServicesGrid DataGridRow:selected /template/ Rectangle#BackgroundRectangle">
+            <Setter Property="Fill" Value="#1A3A40"/>
+        </Style>
+        <Style Selector="DataGrid#ServicesGrid DataGridRow:pointerover /template/ Rectangle#BackgroundRectangle">
+            <Setter Property="Fill" Value="#1A2830"/>
+        </Style>
+        <Style Selector="DataGrid#ServicesGrid DataGridRow:selected:pointerover /template/ Rectangle#BackgroundRectangle">
+            <Setter Property="Fill" Value="#1F454C"/>
+        </Style>
+        <Style Selector="DataGrid#ServicesGrid DataGridCell">
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="FocusAdorner" Value="{x:Null}"/>
+        </Style>
+        <!-- Correct Avalonia template part is Grid#FocusVisual (not a Rectangle) -->
+        <Style Selector="DataGrid#ServicesGrid DataGridCell /template/ Grid#FocusVisual">
+            <Setter Property="IsVisible" Value="False"/>
+        </Style>
+        <Style Selector="DataGrid#ServicesGrid DataGridCell:current /template/ Grid#FocusVisual">
+            <Setter Property="IsVisible" Value="False"/>
+        </Style>
+        <Style Selector="DataGrid#ServicesGrid DataGridCell:focus /template/ Grid#FocusVisual">
+            <Setter Property="IsVisible" Value="False"/>
+        </Style>
+        <Style Selector="DataGrid#ServicesGrid DataGridCell /template/ Rectangle#CurrencyVisual">
+            <Setter Property="IsVisible" Value="False"/>
+            <Setter Property="Opacity" Value="0"/>
+        </Style>
+        <Style Selector="DataGrid#ServicesGrid DataGridCell:current /template/ Rectangle#CurrencyVisual">
+            <Setter Property="IsVisible" Value="False"/>
+            <Setter Property="Opacity" Value="0"/>
+        </Style>
+        <Style Selector="DataGrid#ServicesGrid DataGridRow">
+            <Setter Property="FocusAdorner" Value="{x:Null}"/>
+        </Style>
     </Window.Styles>
 
     <DockPanel Margin="12">
         <Border DockPanel.Dock="Bottom" Background="#0B1014" Padding="12,8" Margin="0,12,0,0" CornerRadius="6">
             <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Text="{Binding StatusText}" Foreground="#8B9AAB" VerticalAlignment="Center"/>
+                <TextBlock Text="{Binding StatusText}" Foreground="#8B9AAB" VerticalAlignment="Center" TextWrapping="Wrap"/>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
                     <TextBlock Text="{Binding HostName}" Foreground="#5C6B7A" VerticalAlignment="Center"/>
                     <Button Classes="toolbar" Content="Run elevated" Command="{Binding RelaunchElevatedCommand}"
@@ -84,77 +140,231 @@
             </Grid>
         </Border>
 
-        <Grid ColumnDefinitions="260,*,280">
+        <Grid ColumnDefinitions="280,*">
+            <!-- Left: either/or scope -->
             <Border Classes="panel" Margin="0,0,12,0">
-                <StackPanel>
-                    <TextBlock Classes="section" Text="SCOPE"/>
-                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,16">
-                        <Button Content="Simple" Command="{Binding UseSimpleModeCommand}"
-                                Padding="14,8" CornerRadius="6"
-                                Background="#00C2A8" Foreground="#0B1215"/>
-                        <Button Content="Profile" Command="{Binding UseProfileModeCommand}"
-                                Padding="14,8" CornerRadius="6"
-                                Background="#1E2A33" Foreground="#E6EDF3"/>
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <TextBlock Classes="section" Text="MODE"/>
+                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,12">
+                            <Button Content="Simple" Command="{Binding UseSimpleModeCommand}"
+                                    Padding="14,8" CornerRadius="6"
+                                    Background="#00C2A8" Foreground="#0B1215"
+                                    IsVisible="{Binding IsSimpleMode}"/>
+                            <Button Content="Simple" Command="{Binding UseSimpleModeCommand}"
+                                    Padding="14,8" CornerRadius="6"
+                                    Background="#1E2A33" Foreground="#E6EDF3"
+                                    IsVisible="{Binding !IsSimpleMode}"/>
+                            <Button Content="Profile" Command="{Binding UseProfileModeCommand}"
+                                    Padding="14,8" CornerRadius="6"
+                                    Background="#00C2A8" Foreground="#0B1215"
+                                    IsVisible="{Binding !IsSimpleMode}"/>
+                            <Button Content="Profile" Command="{Binding UseProfileModeCommand}"
+                                    Padding="14,8" CornerRadius="6"
+                                    Background="#1E2A33" Foreground="#E6EDF3"
+                                    IsVisible="{Binding IsSimpleMode}"/>
+                        </StackPanel>
+
+                        <Border Classes="help">
+                            <TextBlock Text="{Binding ProfileGuidance}" Foreground="#A8B8C8"
+                                       TextWrapping="Wrap" FontSize="12" LineHeight="18"/>
+                        </Border>
+
+                        <!-- Simple mode controls -->
+                        <StackPanel IsVisible="{Binding ShowSimpleFilter}">
+                            <TextBlock Classes="section" Text="SUBSTRING FILTER"/>
+                            <TextBox Text="{Binding SubstringFilter}" PlaceholderText="e.g. product token" Margin="0,0,0,8"/>
+                            <Button Classes="toolbar accent" Content="Apply filter / refresh"
+                                    Command="{Binding RefreshCommand}"
+                                    HorizontalAlignment="Stretch"/>
+                        </StackPanel>
+
+                        <!-- Profile mode controls -->
+                        <StackPanel IsVisible="{Binding ShowProfilePicker}">
+                            <Border Classes="help" IsVisible="{Binding ShowNoProfilesHelp}">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="No profiles detected"
+                                               FontWeight="SemiBold" Foreground="#F0C929"/>
+                                    <TextBlock Text="Run in Simple mode with a substring, or browse to a shareable .wsb.json profile. Roles are defined inside each profile (not fixed to client/server)."
+                                               TextWrapping="Wrap" Foreground="#A8B8C8" FontSize="12"/>
+                                    <Button Classes="toolbar accent" Content="Browse for profile…"
+                                            Command="{Binding BrowseProfileCommand}"
+                                            HorizontalAlignment="Stretch"/>
+                                    <Button Classes="toolbar" Content="Use Simple mode"
+                                            Command="{Binding UseSimpleModeCommand}"
+                                            HorizontalAlignment="Stretch"/>
+                                    <Button Classes="toolbar" Content="Import sample profiles…"
+                                            Command="{Binding LoadSampleProfilesCommand}"
+                                            HorizontalAlignment="Stretch"
+                                            ToolTip.Tip="Copies repo sample .wsb.json files into your user profile folder (for trying Profile mode)."/>
+                                </StackPanel>
+                            </Border>
+
+                            <TextBlock Classes="section" Text="PROFILE"/>
+                            <ComboBox ItemsSource="{Binding AvailableProfiles}"
+                                      SelectedItem="{Binding SelectedProfileId}"
+                                      HorizontalAlignment="Stretch"
+                                      PlaceholderText="Select a profile…"
+                                      Margin="0,0,0,8"/>
+                            <Button Classes="toolbar" Content="Browse / import…"
+                                    Command="{Binding BrowseProfileCommand}"
+                                    HorizontalAlignment="Stretch" Margin="0,0,0,12"/>
+
+                            <StackPanel IsVisible="{Binding ShowRolePicker}">
+                                <TextBlock Classes="section" Text="ROLE (FROM PROFILE)"/>
+                                <ComboBox ItemsSource="{Binding AvailableRoles}"
+                                          SelectedItem="{Binding SelectedRole}"
+                                          HorizontalAlignment="Stretch"
+                                          PlaceholderText="Select a role…"
+                                          Margin="0,0,0,8"/>
+                                <TextBlock Text="Roles describe this machine’s function for the product (e.g. app host, database host, web tier). Each profile defines its own list."
+                                           TextWrapping="Wrap" Foreground="#5C6B7A" FontSize="11" Margin="0,0,0,8"/>
+                            </StackPanel>
+
+                            <Button Classes="toolbar accent" Content="Load / refresh"
+                                    Command="{Binding RefreshCommand}"
+                                    HorizontalAlignment="Stretch" Margin="0,8,0,0"/>
+
+                            <TextBlock Classes="section" Text="PREREQUISITES" Margin="0,20,0,8"
+                                       IsVisible="{Binding HasPrerequisites}"/>
+                            <ListBox ItemsSource="{Binding PrerequisiteLines}"
+                                     Background="Transparent" BorderThickness="0"
+                                     Foreground="#C5D0DA" FontSize="12"
+                                     MaxHeight="200"
+                                     IsVisible="{Binding HasPrerequisites}"/>
+                        </StackPanel>
                     </StackPanel>
-
-                    <TextBlock Classes="section" Text="SUBSTRING FILTER"/>
-                    <TextBox Text="{Binding SubstringFilter}" PlaceholderText="e.g. Milestone" Margin="0,0,0,8"/>
-                    <Button Classes="toolbar accent" Content="Apply filter / refresh" Command="{Binding RefreshCommand}"
-                            HorizontalAlignment="Stretch" Margin="0,0,0,16"/>
-
-                    <TextBlock Classes="section" Text="PROFILE"/>
-                    <ComboBox ItemsSource="{Binding AvailableProfiles}"
-                              SelectedItem="{Binding SelectedProfileId}"
-                              HorizontalAlignment="Stretch" Margin="0,0,0,8"/>
-                    <TextBlock Classes="section" Text="ROLE"/>
-                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
-                        <Button Content="Server" Command="{Binding SetRoleServerCommand}" Padding="12,6" CornerRadius="6"
-                                Background="#1E2A33" Foreground="#E6EDF3"/>
-                        <Button Content="Client" Command="{Binding SetRoleClientCommand}" Padding="12,6" CornerRadius="6"
-                                Background="#1E2A33" Foreground="#E6EDF3"/>
-                    </StackPanel>
-                    <TextBlock Text="{Binding ModeLabel, StringFormat=Mode: {0}}" Foreground="#5C6B7A" Margin="0,8,0,0"/>
-                    <TextBlock Text="{Binding SelectedRole, StringFormat=Role: {0}}" Foreground="#5C6B7A" Margin="0,4,0,0"/>
-                </StackPanel>
+                </ScrollViewer>
             </Border>
 
-            <Border Grid.Column="1" Classes="panel" Margin="0,0,12,0">
-                <DockPanel>
-                    <TextBlock DockPanel.Dock="Top" Classes="section" Text="SERVICES"/>
-                    <DataGrid ItemsSource="{Binding Services}"
-                              AutoGenerateColumns="False"
-                              CanUserResizeColumns="True"
-                              CanUserSortColumns="True"
-                              GridLinesVisibility="Horizontal"
-                              BorderThickness="0"
-                              Background="Transparent"
-                              Foreground="#E6EDF3">
-                        <DataGrid.Columns>
-                            <DataGridCheckBoxColumn Header="" Binding="{Binding IsSelected, Mode=TwoWay}" Width="40"/>
-                            <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100" IsReadOnly="True"/>
-                            <DataGridTextColumn Header="Service Name" Binding="{Binding ServiceName}" Width="2*" IsReadOnly="True"/>
-                            <DataGridTextColumn Header="Display Name" Binding="{Binding DisplayName}" Width="2*" IsReadOnly="True"/>
-                            <DataGridTextColumn Header="Startup" Binding="{Binding StartupType}" Width="140" IsReadOnly="True"/>
-                            <DataGridTextColumn Header="Recovery" Binding="{Binding RecoverySummary}" Width="140" IsReadOnly="True"/>
-                        </DataGrid.Columns>
-                    </DataGrid>
-                </DockPanel>
-            </Border>
-
-            <Border Grid.Column="2" Classes="panel">
-                <Grid RowDefinitions="*,*">
-                    <DockPanel Margin="0,0,0,8">
-                        <TextBlock DockPanel.Dock="Top" Classes="section" Text="DEPENDENCIES"/>
-                        <ListBox ItemsSource="{Binding DependencyLines}" Background="Transparent" BorderThickness="0"
-                                 Foreground="#C5D0DA" FontSize="12"/>
+            <!-- Center + optional deps panel -->
+            <Grid Grid.Column="1" ColumnDefinitions="*,Auto">
+                <Border Classes="panel" Margin="0,0,0,0">
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Top" Classes="section" Text="SERVICES"/>
+                        <DataGrid x:Name="ServicesGrid"
+                                  ItemsSource="{Binding Services}"
+                                  SelectedItem="{Binding FocusedService, Mode=TwoWay}"
+                                  AutoGenerateColumns="False"
+                                  CanUserResizeColumns="True"
+                                  CanUserSortColumns="True"
+                                  GridLinesVisibility="Horizontal"
+                                  BorderThickness="0"
+                                  Background="Transparent"
+                                  Foreground="#E6EDF3"
+                                  SelectionMode="Single">
+                            <DataGrid.Columns>
+                                <!-- Template CheckBox (not DataGridCheckBoxColumn): single-click works;
+                                     DataGridCheckBoxColumn steals the first click for cell focus. -->
+                                <DataGridTemplateColumn Header="" Width="44">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate x:DataType="vm:ServiceRowViewModel">
+                                            <CheckBox Classes="service-check"
+                                                      IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                      HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center"
+                                                      Margin="4,0"
+                                                      ToolTip.Tip="Click to select · Shift+click for range"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="Display Name" Binding="{Binding Title}" Width="3*" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="Startup" Binding="{Binding StartupType}" Width="130" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="Recovery" Binding="{Binding RecoverySummary}" Width="130" IsReadOnly="True"/>
+                                <DataGridTemplateColumn Header="Deps" Width="100">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate x:DataType="vm:ServiceRowViewModel">
+                                            <Button Classes="linkish"
+                                                    Content="{Binding DependenciesButtonLabel}"
+                                                    IsEnabled="{Binding HasDependencies}"
+                                                    Command="{Binding #Root.((vm:MainViewModel)DataContext).ToggleDependenciesForCommand}"
+                                                    CommandParameter="{Binding}"
+                                                    HorizontalAlignment="Left"
+                                                    ToolTip.Tip="{Binding ServiceName}"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
                     </DockPanel>
-                    <DockPanel Grid.Row="1">
-                        <TextBlock DockPanel.Dock="Top" Classes="section" Text="PREREQUISITES"/>
-                        <ListBox ItemsSource="{Binding PrerequisiteLines}" Background="Transparent" BorderThickness="0"
-                                 Foreground="#C5D0DA" FontSize="12"/>
+                </Border>
+
+                <!-- Collapsible dependencies panel -->
+                <Border Grid.Column="1" Classes="panel" Margin="12,0,0,0" Width="300"
+                        IsVisible="{Binding IsDependenciesPanelOpen}">
+                    <DockPanel>
+                        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,8">
+                            <TextBlock Classes="section" Text="{Binding DependenciesHeader}"
+                                       TextWrapping="Wrap" Margin="0" VerticalAlignment="Center"/>
+                            <Button Grid.Column="1" Classes="linkish" Content="✕"
+                                    FontSize="16" FontWeight="Bold"
+                                    Command="{Binding CloseDependenciesPanelCommand}"
+                                    VerticalAlignment="Top"
+                                    ToolTip.Tip="Close dependencies panel"
+                                    Padding="10,4"/>
+                        </Grid>
+
+                        <StackPanel DockPanel.Dock="Bottom" Margin="0,8,0,0" Spacing="2"
+                                    IsVisible="{Binding !ShowDependenciesEmptyMessage}">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <TextBlock FontSize="10"><Run Foreground="#3DDC97" Text="● Running"/></TextBlock>
+                                <TextBlock FontSize="10"><Run Foreground="#FF6B6B" Text="● Stopped"/></TextBlock>
+                                <TextBlock FontSize="10"><Run Foreground="#8B9AAB" Text="⊘ Disabled"/></TextBlock>
+                                <TextBlock FontSize="10"><Run Foreground="#F0C929" Text="! Missing"/></TextBlock>
+                            </StackPanel>
+                            <TextBlock Text="Click a dependency to select it in the table"
+                                       Foreground="#5C6B7A" FontSize="10"/>
+                        </StackPanel>
+
+                        <TextBlock Text="{Binding DependenciesEmptyMessage}"
+                                   IsVisible="{Binding ShowDependenciesEmptyMessage}"
+                                   Foreground="#8B9AAB"
+                                   TextWrapping="Wrap"
+                                   FontSize="13"
+                                   VerticalAlignment="Center"
+                                   HorizontalAlignment="Center"
+                                   Margin="12"/>
+
+                        <ListBox ItemsSource="{Binding DependencyItems}"
+                                 IsVisible="{Binding !ShowDependenciesEmptyMessage}"
+                                 Background="Transparent" BorderThickness="0"
+                                 Foreground="#C5D0DA">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:DependencyItemViewModel">
+                                    <Button Background="Transparent" BorderThickness="0"
+                                            HorizontalAlignment="Stretch"
+                                            HorizontalContentAlignment="Left"
+                                            Padding="4,8"
+                                            Cursor="Hand"
+                                            Command="{Binding #Root.((vm:MainViewModel)DataContext).NavigateToDependencyCommand}"
+                                            CommandParameter="{Binding}"
+                                            ToolTip.Tip="{Binding ToolTip}">
+                                        <Grid ColumnDefinitions="Auto,*,Auto">
+                                            <TextBlock Text="{Binding StatusIcon}"
+                                                       Foreground="{Binding StatusBrush}"
+                                                       FontSize="14"
+                                                       VerticalAlignment="Center"
+                                                       Margin="0,0,10,0"/>
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{Binding Title}"
+                                                       TextWrapping="Wrap"
+                                                       Foreground="#E6EDF3"
+                                                       VerticalAlignment="Center"/>
+                                            <TextBlock Grid.Column="2"
+                                                       Text="{Binding StatusLabel}"
+                                                       Foreground="{Binding StatusBrush}"
+                                                       FontSize="11"
+                                                       VerticalAlignment="Center"
+                                                       Margin="8,0,0,0"/>
+                                        </Grid>
+                                    </Button>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
                     </DockPanel>
-                </Grid>
-            </Border>
+                </Border>
+            </Grid>
         </Grid>
     </DockPanel>
 </Window>

@@ -26,21 +26,21 @@ public class ProfileStoreTests
             {
                 Id = "everbridge-control-center",
                 Name = "Everbridge Control Center",
-                Roles = ["Server", "Client"],
-                DefaultRoles = ["Server"],
+                Roles = ["Application Server", "Client Workstation"],
+                DefaultRoles = ["Application Server"],
                 Services =
                 [
                     new ProfileServiceEntry
                     {
-                        ServiceName = "EverbridgeNotificationSvc",
-                        Roles = ["Server"],
+                        ServiceName = "Example.AppCore",
+                        Roles = ["Application Server"],
                         DesiredStartup = "Automatic",
                         DesiredRecovery = "restart-3"
                     }
                 ],
                 MatchRules =
                 [
-                    new ProfileMatchRule { Type = "substring", Value = "Everbridge", Roles = ["Server", "Client"] }
+                    new ProfileMatchRule { Type = "substring", Value = "Example", Roles = ["Application Server", "Client Workstation"] }
                 ],
                 Prerequisites =
                 [
@@ -48,12 +48,12 @@ public class ProfileStoreTests
                     {
                         Id = "msmq",
                         Title = "Message Queuing (MSMQ)",
-                        Roles = ["Server", "Client"],
+                        Roles = ["Application Server", "Client Workstation"],
                         Checks =
                         [
                             new ProfileCheck { Type = "serviceExists", ServiceName = "MSMQ" }
                         ],
-                        DocRef = "Vendor install guide §MSMQ"
+                        DocRef = "Install guide: MSMQ when required by role"
                     }
                 ]
             };
@@ -83,11 +83,11 @@ public class ProfileStoreTests
             Name = "t",
             Services =
             [
-                new ProfileServiceEntry { ServiceName = "ExplicitSvc", Roles = ["Server"] }
+                new ProfileServiceEntry { ServiceName = "ExplicitSvc", Roles = ["Application Server"] }
             ],
             MatchRules =
             [
-                new ProfileMatchRule { Type = "substring", Value = "Mile", Roles = ["Server"] }
+                new ProfileMatchRule { Type = "substring", Value = "Mile", Roles = ["Application Server"] }
             ]
         };
 
@@ -98,7 +98,7 @@ public class ProfileStoreTests
             new() { ServiceName = "Other", DisplayName = "Other" }
         };
 
-        var names = store.ResolveServiceNames(profile, "Server", live).OrderBy(n => n).ToList();
+        var names = store.ResolveServiceNames(profile, "Application Server", live).OrderBy(n => n).ToList();
         Assert.Equal(["ExplicitSvc", "MilestoneX"], names);
     }
 }

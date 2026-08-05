@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using WinServiceBuddy.Core.Models;
@@ -13,6 +15,10 @@ public partial class MainViewModel : ViewModelBase
     private readonly IWindowsServiceManager _services;
     private readonly ProfileStore _profiles;
     private readonly PrerequisiteEvaluator _prereqs;
+    private readonly Dictionary<string, string> _profilePathById = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Index used as the Shift+click range anchor for checkbox multi-select.</summary>
+    private int _selectionAnchorIndex = -1;
 
     public MainViewModel()
         : this(new WindowsServiceManager(), new ProfileStore())
@@ -26,35 +32,25 @@ public partial class MainViewModel : ViewModelBase
         _prereqs = new PrerequisiteEvaluator(services);
         IsElevated = Elevation.IsElevated();
         HostName = Environment.MachineName;
-        AvailableProfiles = new ObservableCollection<string>(
-            _profiles.ListProfiles().Select(p => p.Profile.Id)
-                .Concat(Directory.Exists(Path.Combine(AppContext.BaseDirectory, "profiles"))
-                    ? Directory.EnumerateFiles(Path.Combine(AppContext.BaseDirectory, "profiles"), "*.wsb.json", SearchOption.AllDirectories)
-                        .Select(Path.GetFileNameWithoutExtension)
-                        .Select(n => n!.Replace(".wsb", ""))
-                    : Array.Empty<string>())
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .OrderBy(x => x));
-
-        // Also offer example path relative to repo when developing
-        var examples = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "profiles", "examples"));
-        if (Directory.Exists(examples))
-        {
-            foreach (var f in Directory.EnumerateFiles(examples, "*.wsb.json"))
-            {
-                var id = Path.GetFileName(f);
-                if (!AvailableProfiles.Contains(id))
-                    AvailableProfiles.Add(id);
-            }
-        }
-
+        AvailableProfiles = new ObservableCollection<string>();
+        AvailableRoles = new ObservableCollection<string>();
+        Services.CollectionChanged += OnServicesCollectionChanged;
+        ReloadAvailableProfiles();
+        UpdateProfileGuidance();
         Refresh();
     }
 
+    /// <summary>Optional: set by the view to open a file picker. Returns full path or null.</summary>
+    public Func<Task<string?>>? PickProfileFileAsync { get; set; }
+
+    /// <summary>Optional: set by the view to scroll/select a row in the services DataGrid.</summary>
+    public Action<ServiceRowViewModel>? ScrollServiceIntoView { get; set; }
+
     public ObservableCollection<ServiceRowViewModel> Services { get; } = new();
     public ObservableCollection<string> PrerequisiteLines { get; } = new();
-    public ObservableCollection<string> DependencyLines { get; } = new();
+    public ObservableCollection<DependencyItemViewModel> DependencyItems { get; } = new();
     public ObservableCollection<string> AvailableProfiles { get; }
+    public ObservableCollection<string> AvailableRoles { get; }
 
     [ObservableProperty]
     public partial bool IsSimpleMode { get; set; } = true;
@@ -66,10 +62,13 @@ public partial class MainViewModel : ViewModelBase
     public partial string? SelectedProfileId { get; set; }
 
     [ObservableProperty]
-    public partial string SelectedRole { get; set; } = "Server";
+    public partial string? SelectedRole { get; set; }
 
     [ObservableProperty]
     public partial string StatusText { get; set; } = "";
+
+    [ObservableProperty]
+    public partial string ProfileGuidance { get; set; } = "";
 
     [ObservableProperty]
     public partial bool IsElevated { get; set; }
@@ -86,7 +85,42 @@ public partial class MainViewModel : ViewModelBase
     [ObservableProperty]
     public partial bool IsBusy { get; set; }
 
+    [ObservableProperty]
+    public partial bool IsDependenciesPanelOpen { get; set; }
+
+    [ObservableProperty]
+    public partial ServiceRowViewModel? FocusedService { get; set; }
+
+    [ObservableProperty]
+    public partial string DependenciesHeader { get; set; } = "Dependencies";
+
+    [ObservableProperty]
+    public partial string DependenciesEmptyMessage { get; set; } = "Select a service to see dependencies.";
+
+    [ObservableProperty]
+    public partial bool ShowDependenciesEmptyMessage { get; set; } = true;
+
+    public bool HasProfiles => AvailableProfiles.Count > 0;
+
+    public bool ShowNoProfilesHelp => !IsSimpleMode && !HasProfiles && string.IsNullOrWhiteSpace(SelectedProfileId);
+
+    public bool ShowProfilePicker => !IsSimpleMode;
+
+    public bool ShowRolePicker => !IsSimpleMode && AvailableRoles.Count > 0;
+
+    public bool ShowSimpleFilter => IsSimpleMode;
+
+    public bool HasPrerequisites => PrerequisiteLines.Count > 0;
+
+    public int SelectedCount => Services.Count(s => s.IsSelected);
+
+    public bool HasSelection => SelectedCount > 0;
+
+    public bool HasServices => Services.Count > 0;
+
     public string ModeLabel => IsSimpleMode ? "Simple" : "Profile";
+
+    public string MainGridColumnDefinitions => IsDependenciesPanelOpen ? "260,*,300" : "260,*";
 
     public IReadOnlyList<string> StartupOptions { get; } =
         ["Automatic", "AutomaticDelayed", "Manual", "Disabled"];
@@ -97,7 +131,39 @@ public partial class MainViewModel : ViewModelBase
     partial void OnIsSimpleModeChanged(bool value)
     {
         OnPropertyChanged(nameof(ModeLabel));
+        OnPropertyChanged(nameof(ShowSimpleFilter));
+        OnPropertyChanged(nameof(ShowProfilePicker));
+        OnPropertyChanged(nameof(ShowRolePicker));
+        OnPropertyChanged(nameof(ShowNoProfilesHelp));
+        UpdateProfileGuidance();
         Refresh();
+    }
+
+    partial void OnSelectedProfileIdChanged(string? value)
+    {
+        LoadRolesForSelectedProfile();
+        OnPropertyChanged(nameof(ShowNoProfilesHelp));
+        OnPropertyChanged(nameof(ShowRolePicker));
+        UpdateProfileGuidance();
+        if (!IsSimpleMode)
+            Refresh();
+    }
+
+    partial void OnSelectedRoleChanged(string? value)
+    {
+        if (!IsSimpleMode)
+            Refresh();
+    }
+
+    partial void OnFocusedServiceChanged(ServiceRowViewModel? value)
+    {
+        UpdateDependenciesPanelContent();
+    }
+
+    partial void OnIsDependenciesPanelOpenChanged(bool value)
+    {
+        OnPropertyChanged(nameof(MainGridColumnDefinitions));
+        UpdateDependenciesPanelContent();
     }
 
     [RelayCommand]
@@ -108,20 +174,41 @@ public partial class MainViewModel : ViewModelBase
             IsBusy = true;
             List<ServiceInfo> list;
             PrerequisiteLines.Clear();
-            DependencyLines.Clear();
 
-            if (!IsSimpleMode && !string.IsNullOrWhiteSpace(SelectedProfileId))
+            // Keep focused service name across rebuild
+            var focusedName = FocusedService?.ServiceName;
+
+            if (!IsSimpleMode)
             {
+                if (string.IsNullOrWhiteSpace(SelectedProfileId))
+                {
+                    ClearServices();
+                    FocusedService = null;
+                    UpdateDependenciesPanelContent();
+                    StatusText = HasProfiles
+                        ? "Choose a profile and role to load services."
+                        : "No profiles detected — browse to a .wsb.json or switch to Simple mode.";
+                    return;
+                }
+
                 var profile = LoadProfile(SelectedProfileId);
                 if (profile is null)
                 {
                     StatusText = $"Profile not found: {SelectedProfileId}";
-                    Services.Clear();
+                    ClearServices();
+                    return;
+                }
+
+                var role = SelectedRole;
+                if (string.IsNullOrWhiteSpace(role))
+                {
+                    ClearServices();
+                    StatusText = "Select a role defined by this profile.";
                     return;
                 }
 
                 var live = _services.GetServices();
-                var names = _profiles.ResolveServiceNames(profile, SelectedRole, live).ToList();
+                var names = _profiles.ResolveServiceNames(profile, role, live).ToList();
                 if (profile.IncludeScmDependencies)
                 {
                     var expanded = new HashSet<string>(names, StringComparer.OrdinalIgnoreCase);
@@ -130,35 +217,58 @@ public partial class MainViewModel : ViewModelBase
                         foreach (var dep in _services.GetDependsOn(n))
                             expanded.Add(dep);
                     }
+
                     names = expanded.ToList();
                 }
 
                 list = ServiceFilter.ByNames(live, names).ToList();
 
-                foreach (var r in _prereqs.Evaluate(profile, SelectedRole))
+                foreach (var r in _prereqs.Evaluate(profile, role))
                 {
                     var mark = r.Passed ? "PASS" : "FAIL";
                     PrerequisiteLines.Add($"[{mark}] {r.Title}: {r.Message}");
                 }
 
-                var map = _services.BuildDependencyMap(list.Select(s => s.ServiceName));
-                foreach (var (svc, deps) in map)
-                {
-                    DependencyLines.Add(deps.Count == 0
-                        ? $"{svc} → (none)"
-                        : $"{svc} → {string.Join(", ", deps)}");
-                }
+                OnPropertyChanged(nameof(HasPrerequisites));
             }
             else
             {
+                OnPropertyChanged(nameof(HasPrerequisites));
                 list = string.IsNullOrWhiteSpace(SubstringFilter)
                     ? _services.GetServices().ToList()
                     : _services.FindBySubstring(SubstringFilter).ToList();
             }
 
-            Services.Clear();
+            var lookup = BuildDisplayNameLookup(list);
+            // Enrich lookup with depends-on services that may not be in the filtered list
             foreach (var s in list)
-                Services.Add(new ServiceRowViewModel(s));
+            {
+                foreach (var dep in s.DependsOn)
+                {
+                    if (lookup.ContainsKey(dep))
+                        continue;
+                    var depInfo = _services.GetService(dep);
+                    if (depInfo is not null)
+                        lookup[dep] = depInfo.DisplayName;
+                }
+            }
+
+            // Clear without leaking PropertyChanged handlers
+            ClearServices();
+            _selectionAnchorIndex = -1;
+            foreach (var s in list)
+                Services.Add(new ServiceRowViewModel(s, lookup));
+
+            FocusedService = focusedName is null
+                ? null
+                : Services.FirstOrDefault(s =>
+                    string.Equals(s.ServiceName, focusedName, StringComparison.OrdinalIgnoreCase));
+
+            if (FocusedService is not null)
+                _selectionAnchorIndex = Services.IndexOf(FocusedService);
+
+            UpdateDependenciesPanelContent();
+            NotifySelectionChanged();
 
             var running = list.Count(s => s.IsRunning);
             StatusText =
@@ -174,16 +284,16 @@ public partial class MainViewModel : ViewModelBase
         }
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanOperateOnSelection))]
     private Task StartSelectedAsync() => RunOnSelectedAsync(names => _services.StartMany(names));
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanOperateOnSelection))]
     private Task StopSelectedAsync() => RunOnSelectedAsync(names => _services.StopMany(names));
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanOperateOnSelection))]
     private Task RestartSelectedAsync() => RunOnSelectedAsync(names => _services.RestartMany(names));
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanOperateOnSelection))]
     private Task ApplyStartupAsync()
     {
         if (!EnsureElevated())
@@ -198,7 +308,7 @@ public partial class MainViewModel : ViewModelBase
         return RunOnSelectedAsync(names => _services.SetStartupTypeMany(names, startup));
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanOperateOnSelection))]
     private Task ApplyRecoveryAsync()
     {
         if (!EnsureElevated())
@@ -213,19 +323,58 @@ public partial class MainViewModel : ViewModelBase
         return RunOnSelectedAsync(names => _services.SetRecoveryMany(names, preset));
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanSelectAll))]
     private void SelectAll()
     {
         foreach (var s in Services)
             s.IsSelected = true;
+        if (Services.Count > 0)
+            _selectionAnchorIndex = 0;
+        NotifySelectionChanged();
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanSelectNone))]
     private void SelectNone()
     {
         foreach (var s in Services)
             s.IsSelected = false;
+        NotifySelectionChanged();
     }
+
+    /// <summary>
+    /// Checkbox / Shift+click selection for bulk actions.
+    /// Plain click: toggle this row and set the range anchor.
+    /// Shift+click: check every row from the anchor through this row (inclusive).
+    /// </summary>
+    public void ApplyCheckboxInteraction(ServiceRowViewModel row, bool shift)
+    {
+        var index = Services.IndexOf(row);
+        if (index < 0)
+            return;
+
+        if (shift && _selectionAnchorIndex >= 0 && _selectionAnchorIndex < Services.Count)
+        {
+            var from = Math.Min(_selectionAnchorIndex, index);
+            var to = Math.Max(_selectionAnchorIndex, index);
+            for (var i = from; i <= to; i++)
+                Services[i].IsSelected = true;
+        }
+        else
+        {
+            row.IsSelected = !row.IsSelected;
+            _selectionAnchorIndex = index;
+        }
+
+        FocusedService = row;
+        NotifySelectionChanged();
+        ScrollServiceIntoView?.Invoke(row);
+    }
+
+    private bool CanOperateOnSelection() => HasSelection;
+
+    private bool CanSelectAll() => HasServices && SelectedCount < Services.Count;
+
+    private bool CanSelectNone() => HasSelection;
 
     [RelayCommand]
     private void RelaunchElevated()
@@ -237,36 +386,361 @@ public partial class MainViewModel : ViewModelBase
         }
 
         if (Elevation.TryRelaunchElevated())
-        {
-            // Caller process can exit; Avalonia lifetime will be closed by user or we request shutdown.
             StatusText = "Elevated process launched. You can close this window.";
-        }
         else
-        {
             StatusText = "Elevation cancelled or failed.";
-        }
     }
 
     [RelayCommand]
     private void UseSimpleMode() => IsSimpleMode = true;
 
     [RelayCommand]
-    private void UseProfileMode() => IsSimpleMode = false;
-
-    [RelayCommand]
-    private void SetRoleServer()
+    private void UseProfileMode()
     {
-        SelectedRole = "Server";
-        if (!IsSimpleMode)
-            Refresh();
+        IsSimpleMode = false;
+        UpdateProfileGuidance();
     }
 
     [RelayCommand]
-    private void SetRoleClient()
+    private async Task BrowseProfileAsync()
     {
-        SelectedRole = "Client";
-        if (!IsSimpleMode)
-            Refresh();
+        if (PickProfileFileAsync is null)
+        {
+            StatusText = "File picker is not available.";
+            return;
+        }
+
+        var path = await PickProfileFileAsync();
+        if (string.IsNullOrWhiteSpace(path))
+            return;
+
+        try
+        {
+            var profile = _profiles.Load(path);
+            // Import into user store so it shows up next launch
+            _profiles.Import(path, machineScope: false);
+            ReloadAvailableProfiles();
+
+            if (!AvailableProfiles.Contains(profile.Id))
+                AvailableProfiles.Add(profile.Id);
+
+            _profilePathById[profile.Id] = path;
+            IsSimpleMode = false;
+            SelectedProfileId = profile.Id;
+            StatusText = $"Loaded profile '{profile.Name}'.";
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Could not load profile: {ex.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private void ShowDependenciesFor(ServiceRowViewModel? row)
+    {
+        if (row is null)
+            return;
+
+        FocusedService = row;
+        IsDependenciesPanelOpen = true;
+        UpdateDependenciesPanelContent();
+    }
+
+    [RelayCommand]
+    private void ToggleDependenciesFor(ServiceRowViewModel? row)
+    {
+        if (row is null)
+            return;
+
+        if (IsDependenciesPanelOpen &&
+            FocusedService is not null &&
+            string.Equals(FocusedService.ServiceName, row.ServiceName, StringComparison.OrdinalIgnoreCase))
+        {
+            IsDependenciesPanelOpen = false;
+            return;
+        }
+
+        ShowDependenciesFor(row);
+    }
+
+    [RelayCommand]
+    private void CloseDependenciesPanel()
+    {
+        IsDependenciesPanelOpen = false;
+    }
+
+    /// <summary>Select the dependency in the services table (when visible) and focus it.</summary>
+    [RelayCommand]
+    private void NavigateToDependency(DependencyItemViewModel? dep)
+    {
+        if (dep is null)
+            return;
+
+        if (string.Equals(dep.StatusKind, "Missing", StringComparison.OrdinalIgnoreCase))
+        {
+            StatusText = $"Dependency “{dep.Title}” is not installed on this machine.";
+            return;
+        }
+
+        var row = Services.FirstOrDefault(s =>
+            string.Equals(s.ServiceName, dep.ServiceName, StringComparison.OrdinalIgnoreCase));
+
+        if (row is null)
+        {
+            // Not in current filter/profile set — still try to surface it if SCM knows it.
+            var info = _services.GetService(dep.ServiceName);
+            if (info is null)
+            {
+                StatusText = $"Dependency “{dep.Title}” is not in the current list and was not found.";
+                return;
+            }
+
+            var lookup = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                [info.ServiceName] = info.DisplayName
+            };
+            foreach (var d in info.DependsOn)
+            {
+                var di = _services.GetService(d);
+                if (di is not null)
+                    lookup[d] = di.DisplayName;
+            }
+
+            row = new ServiceRowViewModel(info, lookup);
+            Services.Add(row);
+            StatusText = $"Opened “{row.Title}” (was outside the current filter/profile set).";
+        }
+        else
+        {
+            StatusText = $"Selected dependency “{row.Title}”.";
+        }
+
+        // Clear multi-check noise; highlight the navigated service
+        foreach (var s in Services)
+            s.IsSelected = false;
+        row.IsSelected = true;
+        NotifySelectionChanged();
+
+        // Force property change even if the same instance was already focused
+        // so the view re-scrolls the DataGrid to this row.
+        if (ReferenceEquals(FocusedService, row))
+            FocusedService = null;
+
+        FocusedService = row;
+        IsDependenciesPanelOpen = true;
+        UpdateDependenciesPanelContent();
+
+        // Explicit scroll request (selection alone does not move the viewport)
+        ScrollServiceIntoView?.Invoke(row);
+    }
+
+    /// <summary>Import sample profiles from the repo/examples folder into the user profile store (dev convenience).</summary>
+    [RelayCommand]
+    private void LoadSampleProfiles()
+    {
+        var imported = 0;
+        foreach (var dir in EnumerateExampleProfileDirs())
+        {
+            foreach (var file in Directory.EnumerateFiles(dir, "*.wsb.json"))
+            {
+                try
+                {
+                    _profiles.Import(file, machineScope: false);
+                    imported++;
+                }
+                catch
+                {
+                    // skip invalid
+                }
+            }
+        }
+
+        ReloadAvailableProfiles();
+        StatusText = imported == 0
+            ? "No sample profiles found to import."
+            : $"Imported {imported} sample profile file(s).";
+    }
+
+    private void ReloadAvailableProfiles()
+    {
+        AvailableProfiles.Clear();
+        _profilePathById.Clear();
+
+        // Only installed/imported profiles — do NOT auto-list repo samples
+        // (otherwise "No profiles detected" never appears during local dev).
+        foreach (var (path, profile) in _profiles.ListProfiles())
+        {
+            if (!AvailableProfiles.Contains(profile.Id))
+                AvailableProfiles.Add(profile.Id);
+            _profilePathById[profile.Id] = path;
+        }
+
+        OnPropertyChanged(nameof(HasProfiles));
+        OnPropertyChanged(nameof(ShowNoProfilesHelp));
+        UpdateProfileGuidance();
+    }
+
+    private static IEnumerable<string> EnumerateExampleProfileDirs()
+    {
+        var candidates = new[]
+        {
+            Path.Combine(AppContext.BaseDirectory, "profiles", "examples"),
+            Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "profiles", "examples")),
+            Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, "profiles", "examples"))
+        };
+
+        foreach (var c in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (Directory.Exists(c))
+                yield return c;
+        }
+    }
+
+    private void LoadRolesForSelectedProfile()
+    {
+        AvailableRoles.Clear();
+        if (string.IsNullOrWhiteSpace(SelectedProfileId))
+        {
+            SelectedRole = null;
+            OnPropertyChanged(nameof(ShowRolePicker));
+            return;
+        }
+
+        var profile = LoadProfile(SelectedProfileId);
+        if (profile is null)
+        {
+            SelectedRole = null;
+            OnPropertyChanged(nameof(ShowRolePicker));
+            return;
+        }
+
+        var roles = profile.Roles.Count > 0
+            ? profile.Roles
+            : profile.DefaultRoles;
+
+        foreach (var role in roles.Distinct(StringComparer.OrdinalIgnoreCase))
+            AvailableRoles.Add(role);
+
+        if (AvailableRoles.Count == 0)
+        {
+            // Profile with no roles: treat as single implicit role covering all entries
+            AvailableRoles.Add("(all)");
+        }
+
+        var preferred = profile.DefaultRoles.FirstOrDefault(r =>
+            AvailableRoles.Any(a => string.Equals(a, r, StringComparison.OrdinalIgnoreCase)));
+
+        SelectedRole = preferred
+                       ?? AvailableRoles.FirstOrDefault();
+
+        OnPropertyChanged(nameof(ShowRolePicker));
+    }
+
+    private void UpdateProfileGuidance()
+    {
+        if (IsSimpleMode)
+        {
+            ProfileGuidance = "Simple mode: filter services by name substring on this machine.";
+            return;
+        }
+
+        if (!HasProfiles && string.IsNullOrWhiteSpace(SelectedProfileId))
+        {
+            ProfileGuidance =
+                "No profiles detected. Switch to Simple mode, or Browse to import a .wsb.json profile. Roles (e.g. Application Server, Database Host) come from the profile — they are not fixed.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(SelectedProfileId))
+        {
+            ProfileGuidance = "Select a profile. Roles listed are defined by that profile.";
+            return;
+        }
+
+        if (AvailableRoles.Count == 0)
+        {
+            ProfileGuidance = "This profile defines no roles yet.";
+            return;
+        }
+
+        ProfileGuidance =
+            $"Profile role “{SelectedRole ?? "—"}”: services and prerequisites for this machine’s function. Roles are profile-specific.";
+    }
+
+    private void UpdateDependenciesPanelContent()
+    {
+        DependencyItems.Clear();
+
+        if (!IsDependenciesPanelOpen)
+        {
+            ShowDependenciesEmptyMessage = false;
+            return;
+        }
+
+        if (FocusedService is null)
+        {
+            DependenciesHeader = "Dependencies";
+            DependenciesEmptyMessage = "Select a service to see dependencies.";
+            ShowDependenciesEmptyMessage = true;
+            return;
+        }
+
+        DependenciesHeader = $"Dependencies — {FocusedService.Title}";
+
+        if (!FocusedService.HasDependencies)
+        {
+            DependenciesEmptyMessage = "No dependencies.";
+            ShowDependenciesEmptyMessage = true;
+            return;
+        }
+
+        ShowDependenciesEmptyMessage = false;
+        for (var i = 0; i < FocusedService.DependsOnServiceNames.Count; i++)
+        {
+            var svcName = FocusedService.DependsOnServiceNames[i];
+            var display = i < FocusedService.DependsOnDisplayNames.Count
+                ? FocusedService.DependsOnDisplayNames[i]
+                : svcName;
+
+            DependencyItems.Add(BuildDependencyItem(svcName, display));
+        }
+    }
+
+    private DependencyItemViewModel BuildDependencyItem(string serviceName, string displayName)
+    {
+        var info = _services.GetService(serviceName);
+        if (info is null)
+        {
+            return new DependencyItemViewModel
+            {
+                ServiceName = serviceName,
+                DisplayName = displayName,
+                StatusKind = "Missing"
+            };
+        }
+
+        var kind = info.StartupType == ServiceStartupType.Disabled
+            ? "Disabled"
+            : info.IsRunning
+                ? "Running"
+                : info.IsStopped
+                    ? "Stopped"
+                    : info.Status;
+
+        return new DependencyItemViewModel
+        {
+            ServiceName = info.ServiceName,
+            DisplayName = string.IsNullOrWhiteSpace(info.DisplayName) ? displayName : info.DisplayName,
+            StatusKind = kind
+        };
+    }
+
+    private static Dictionary<string, string> BuildDisplayNameLookup(IEnumerable<ServiceInfo> services)
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var s in services)
+            map[s.ServiceName] = s.DisplayName;
+        return map;
     }
 
     private async Task RunOnSelectedAsync(Func<IEnumerable<string>, BulkOperationResult> action)
@@ -277,13 +751,7 @@ public partial class MainViewModel : ViewModelBase
         var names = Services.Where(s => s.IsSelected).Select(s => s.ServiceName).ToList();
         if (names.Count == 0)
         {
-            // If nothing selected, operate on all visible rows (ops-friendly default).
-            names = Services.Select(s => s.ServiceName).ToList();
-        }
-
-        if (names.Count == 0)
-        {
-            StatusText = "No services in view.";
+            StatusText = "Select one or more services first.";
             return;
         }
 
@@ -304,6 +772,56 @@ public partial class MainViewModel : ViewModelBase
         }
     }
 
+    private void ClearServices()
+    {
+        foreach (var s in Services)
+            s.PropertyChanged -= OnServiceRowPropertyChanged;
+        Services.Clear();
+        NotifySelectionChanged();
+    }
+
+    private void OnServicesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.OldItems is not null)
+        {
+            foreach (ServiceRowViewModel row in e.OldItems)
+                row.PropertyChanged -= OnServiceRowPropertyChanged;
+        }
+
+        if (e.NewItems is not null)
+        {
+            foreach (ServiceRowViewModel row in e.NewItems)
+                row.PropertyChanged += OnServiceRowPropertyChanged;
+        }
+
+        if (e.Action == NotifyCollectionChangedAction.Reset)
+        {
+            // Handlers already removed in ClearServices when we clear intentionally.
+        }
+
+        NotifySelectionChanged();
+    }
+
+    private void OnServiceRowPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(ServiceRowViewModel.IsSelected) or null)
+            NotifySelectionChanged();
+    }
+
+    private void NotifySelectionChanged()
+    {
+        OnPropertyChanged(nameof(SelectedCount));
+        OnPropertyChanged(nameof(HasSelection));
+        OnPropertyChanged(nameof(HasServices));
+        StartSelectedCommand.NotifyCanExecuteChanged();
+        StopSelectedCommand.NotifyCanExecuteChanged();
+        RestartSelectedCommand.NotifyCanExecuteChanged();
+        ApplyStartupCommand.NotifyCanExecuteChanged();
+        ApplyRecoveryCommand.NotifyCanExecuteChanged();
+        SelectAllCommand.NotifyCanExecuteChanged();
+        SelectNoneCommand.NotifyCanExecuteChanged();
+    }
+
     private bool EnsureElevated()
     {
         if (Elevation.IsElevated())
@@ -316,23 +834,23 @@ public partial class MainViewModel : ViewModelBase
     {
         try
         {
+            if (_profilePathById.TryGetValue(idOrPath, out var mapped) && File.Exists(mapped))
+                return _profiles.Load(mapped);
+
             var found = _profiles.FindById(idOrPath);
             if (found is not null)
                 return found;
 
-            // Resolve examples from repo / beside exe
-            var candidates = new[]
-            {
-                idOrPath,
-                Path.Combine(AppContext.BaseDirectory, "profiles", "examples", idOrPath),
-                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "profiles", "examples", idOrPath)),
-                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "profiles", "examples", idOrPath.EndsWith(".json") ? idOrPath : idOrPath + ".wsb.json"))
-            };
+            if (File.Exists(idOrPath))
+                return _profiles.Load(idOrPath);
 
-            foreach (var c in candidates)
+            foreach (var dir in EnumerateExampleProfileDirs())
             {
-                if (File.Exists(c))
-                    return _profiles.Load(c);
+                var candidate = Path.Combine(dir, idOrPath.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
+                    ? idOrPath
+                    : idOrPath + ".wsb.json");
+                if (File.Exists(candidate))
+                    return _profiles.Load(candidate);
             }
         }
         catch
