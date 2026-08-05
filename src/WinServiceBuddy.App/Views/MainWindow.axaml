@@ -126,6 +126,8 @@
                     <Button Classes="toolbar" Content="Refresh" Command="{Binding RefreshCommand}"/>
                     <Button Classes="toolbar" Content="Select all" Command="{Binding SelectAllCommand}" Margin="16,0,8,0"/>
                     <Button Classes="toolbar" Content="Select none" Command="{Binding SelectNoneCommand}"/>
+                    <Button Classes="toolbar" Content="Build profile…" Command="{Binding BuildProfileCommand}" Margin="16,0,8,0"/>
+                    <Button Classes="toolbar" Content="Edit profile…" Command="{Binding EditProfileCommand}"/>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                     <TextBlock Text="Bulk startup" Foreground="#8B9AAB" VerticalAlignment="Center"/>
@@ -210,6 +212,17 @@
                                     Command="{Binding BrowseProfileCommand}"
                                     HorizontalAlignment="Stretch" Margin="0,0,0,12"/>
 
+                            <StackPanel IsVisible="{Binding ShowEnvironmentPicker}">
+                                <TextBlock Classes="section" Text="ENVIRONMENT"/>
+                                <ComboBox ItemsSource="{Binding AvailableEnvironments}"
+                                          SelectedItem="{Binding SelectedEnvironment}"
+                                          HorizontalAlignment="Stretch"
+                                          PlaceholderText="Production / Acceptance…"
+                                          Margin="0,0,0,8"/>
+                                <TextBlock Text="Environment sets desired startup/recovery policy for this product (e.g. Production=Automatic, Acceptance=Manual)."
+                                           TextWrapping="Wrap" Foreground="#5C6B7A" FontSize="11" Margin="0,0,0,8"/>
+                            </StackPanel>
+
                             <StackPanel IsVisible="{Binding ShowRolePicker}">
                                 <TextBlock Classes="section" Text="ROLE (FROM PROFILE)"/>
                                 <ComboBox ItemsSource="{Binding AvailableRoles}"
@@ -220,6 +233,10 @@
                                 <TextBlock Text="Roles describe this machine’s function for the product (e.g. app host, database host, web tier). Each profile defines its own list."
                                            TextWrapping="Wrap" Foreground="#5C6B7A" FontSize="11" Margin="0,0,0,8"/>
                             </StackPanel>
+
+                            <Button Classes="toolbar" Content="Build / edit profile…"
+                                    Command="{Binding EditProfileCommand}"
+                                    HorizontalAlignment="Stretch" Margin="0,0,0,8"/>
 
                             <Button Classes="toolbar accent" Content="Load / refresh"
                                     Command="{Binding RefreshCommand}"

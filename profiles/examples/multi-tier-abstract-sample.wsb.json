@@ -1,8 +1,8 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "multi-tier-abstract-sample",
   "name": "Multi-tier product (abstract sample)",
-  "description": "Illustrates profile-defined roles and role-scoped prerequisites only. Replace service names with your product’s. Not vendor-specific.",
+  "description": "Illustrates product + environments (Production vs Acceptance), ordered services, and role-scoped prerequisites. Not vendor-specific.",
   "productVersionNote": "Sample for schema/UX — not a real product definition.",
   "defaultRoles": [ "Application Server" ],
   "roles": [
@@ -11,34 +11,51 @@
     "Web Front End",
     "Client Workstation"
   ],
+  "defaultEnvironment": "Production",
+  "environments": [
+    {
+      "id": "production",
+      "name": "Production",
+      "defaultStartup": "Automatic",
+      "defaultRecovery": "restart-3"
+    },
+    {
+      "id": "acceptance",
+      "name": "Acceptance",
+      "defaultStartup": "Manual",
+      "defaultRecovery": "none"
+    }
+  ],
   "includeScmDependencies": true,
   "dependencyDirection": "dependsOn",
   "services": [
     {
       "serviceName": "Example.AppCore",
+      "displayNameHint": "App Core",
+      "order": 10,
       "roles": [ "Application Server" ],
-      "optional": false,
-      "desiredStartup": "Automatic",
-      "desiredRecovery": "restart-3"
+      "optional": false
     },
     {
       "serviceName": "Example.AppWorker",
+      "displayNameHint": "App Worker",
+      "order": 20,
       "roles": [ "Application Server" ],
-      "optional": false,
-      "desiredStartup": "Automatic",
-      "desiredRecovery": "restart-3"
+      "optional": false
     },
     {
       "serviceName": "MSSQLSERVER",
+      "displayNameHint": "SQL Server",
+      "order": 5,
       "roles": [ "Database Host" ],
-      "optional": false,
-      "desiredStartup": "Automatic"
+      "optional": false
     },
     {
       "serviceName": "W3SVC",
+      "displayNameHint": "IIS WWW",
+      "order": 30,
       "roles": [ "Web Front End", "Application Server" ],
-      "optional": true,
-      "desiredStartup": "Automatic"
+      "optional": true
     }
   ],
   "matchRules": [],
@@ -69,15 +86,6 @@
         { "type": "serviceExists", "serviceName": "W3SVC", "severity": "error" }
       ],
       "docRef": "Product docs: web tier requires IIS (W3SVC)."
-    },
-    {
-      "id": "app-core-on-workers",
-      "title": "Core app service present on application hosts",
-      "roles": [ "Application Server" ],
-      "checks": [
-        { "type": "serviceExists", "serviceName": "Example.AppCore", "severity": "error" }
-      ],
-      "docRef": "Product docs: secondary workers expect the core service role on application servers."
     }
   ],
   "metadata": {

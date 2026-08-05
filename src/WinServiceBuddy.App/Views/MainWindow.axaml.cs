@@ -33,6 +33,7 @@ public partial class MainWindow : Window
             _vm.PropertyChanged -= OnViewModelPropertyChanged;
             _vm.ScrollServiceIntoView = null;
             _vm.PickProfileFileAsync = null;
+            _vm.OpenProfileBuilder = null;
         }
 
         _vm = DataContext as MainViewModel;
@@ -41,7 +42,24 @@ public partial class MainWindow : Window
 
         _vm.PickProfileFileAsync = PickProfileFileAsync;
         _vm.ScrollServiceIntoView = ScrollServiceRowIntoView;
+        _vm.OpenProfileBuilder = OpenProfileBuilderWindow;
         _vm.PropertyChanged += OnViewModelPropertyChanged;
+    }
+
+    private void OpenProfileBuilderWindow(WinServiceBuddy.Core.Profiles.ProductProfile? profile, string? path)
+    {
+        if (_vm is null)
+            return;
+
+        var builderVm = profile is null
+            ? new ProfileBuilderViewModel()
+            : new ProfileBuilderViewModel(new WinServiceBuddy.Core.Services.WindowsServiceManager(),
+                new WinServiceBuddy.Core.Profiles.ProfileStore(), profile, path);
+
+        builderVm.ProfilesChanged = () => _vm.NotifyProfilesChangedFromBuilder();
+
+        var window = new ProfileBuilderWindow(builderVm);
+        window.Show(this);
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)

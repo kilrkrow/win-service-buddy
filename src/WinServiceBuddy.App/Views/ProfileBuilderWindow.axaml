@@ -1,0 +1,162 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:WinServiceBuddy.App.ViewModels"
+        x:Class="WinServiceBuddy.App.Views.ProfileBuilderWindow"
+        x:DataType="vm:ProfileBuilderViewModel"
+        Width="1200" Height="780"
+        MinWidth="960" MinHeight="600"
+        Background="#0F1419"
+        Title="Win Service Buddy — Profile Builder"
+        WindowStartupLocation="CenterOwner">
+
+    <Window.Styles>
+        <Style Selector="Button.toolbar">
+            <Setter Property="Margin" Value="0,0,8,0"/>
+            <Setter Property="Padding" Value="12,8"/>
+            <Setter Property="Background" Value="#1E2A33"/>
+            <Setter Property="Foreground" Value="#E6EDF3"/>
+            <Setter Property="CornerRadius" Value="6"/>
+        </Style>
+        <Style Selector="Button.accent">
+            <Setter Property="Background" Value="#00C2A8"/>
+            <Setter Property="Foreground" Value="#0B1215"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+        <Style Selector="TextBlock.section">
+            <Setter Property="Foreground" Value="#8B9AAB"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin" Value="0,0,0,6"/>
+        </Style>
+        <Style Selector="Border.panel">
+            <Setter Property="Background" Value="#151C23"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="12"/>
+            <Setter Property="BorderBrush" Value="#243040"/>
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+    </Window.Styles>
+
+    <DockPanel Margin="12">
+        <Border DockPanel.Dock="Bottom" Background="#0B1014" Padding="12,8" Margin="0,12,0,0" CornerRadius="6">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="{Binding StatusText}" Foreground="#8B9AAB" TextWrapping="Wrap"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <Button Classes="toolbar" Content="New" Command="{Binding NewProfileCommand}"/>
+                    <Button Classes="toolbar" Content="Open…" Command="{Binding OpenProfileCommand}"/>
+                    <Button Classes="toolbar accent" Content="Save" Command="{Binding SaveCommand}"/>
+                    <Button Classes="toolbar" Content="Save as…" Command="{Binding SaveAsCommand}"/>
+                    <Button Classes="toolbar" Content="Validate" Command="{Binding ValidateCommand}"/>
+                    <Button Classes="toolbar" Content="Close" Command="{Binding CloseCommand}"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Header: product + environments -->
+        <Border DockPanel.Dock="Top" Classes="panel" Margin="0,0,0,12">
+            <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto">
+                <StackPanel Margin="0,0,16,0">
+                    <TextBlock Classes="section" Text="PRODUCT"/>
+                    <Grid ColumnDefinitions="80,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="6" ColumnSpacing="8">
+                        <TextBlock Text="Name" Foreground="#8B9AAB" VerticalAlignment="Center"/>
+                        <TextBox Grid.Column="1" Text="{Binding ProductName}"/>
+                        <TextBlock Grid.Row="1" Text="Id" Foreground="#8B9AAB" VerticalAlignment="Center"/>
+                        <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding ProductId}"/>
+                        <TextBlock Grid.Row="2" Text="Roles" Foreground="#8B9AAB" VerticalAlignment="Center"/>
+                        <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding RolesCsv}"
+                                 PlaceholderText="Application Server, Client Workstation"/>
+                    </Grid>
+                </StackPanel>
+                <StackPanel Grid.Column="1">
+                    <TextBlock Classes="section" Text="ENVIRONMENT"/>
+                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
+                        <ComboBox Width="180" ItemsSource="{Binding EnvironmentNames}"
+                                  SelectedItem="{Binding SelectedEnvironmentName}"/>
+                        <TextBox Width="140" Text="{Binding NewEnvironmentName}" PlaceholderText="New env name"/>
+                        <Button Classes="toolbar" Content="Add env" Command="{Binding AddEnvironmentCommand}"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Text="Default startup" Foreground="#8B9AAB" VerticalAlignment="Center"/>
+                        <ComboBox Width="160" ItemsSource="{Binding EnvStartupOptions}"
+                                  SelectedItem="{Binding EnvDefaultStartup}"/>
+                        <TextBlock Text="Recovery" Foreground="#8B9AAB" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                        <ComboBox Width="140" ItemsSource="{Binding EnvRecoveryOptions}"
+                                  SelectedItem="{Binding EnvDefaultRecovery}"/>
+                        <Button Classes="toolbar accent" Content="Apply to all services"
+                                Command="{Binding ApplyEnvironmentDefaultsToAllCommand}"/>
+                    </StackPanel>
+                    <TextBlock Text="Environments share the same service list &amp; start order; each sets desired startup/recovery (e.g. Production=Automatic+restart-3, Acceptance=Manual+none)."
+                               Foreground="#5C6B7A" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+            <!-- Discover -->
+            <Border Classes="panel">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                        <TextBlock Classes="section" Text="DISCOVER (SUBSTRING)"/>
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                            <TextBox Text="{Binding DiscoverFilter}" PlaceholderText="e.g. Milestone"/>
+                            <Button Grid.Column="1" Classes="toolbar accent" Content="Search"
+                                    Command="{Binding DiscoverCommand}"/>
+                        </Grid>
+                        <Button Classes="toolbar" Content="Add selected →" Margin="0,8,0,0"
+                                Command="{Binding AddSelectedDiscoveriesCommand}"
+                                HorizontalAlignment="Left"/>
+                    </StackPanel>
+                    <DataGrid ItemsSource="{Binding DiscoverResults}"
+                              AutoGenerateColumns="False"
+                              CanUserResizeColumns="True"
+                              Background="Transparent"
+                              Foreground="#E6EDF3"
+                              BorderThickness="0"
+                              GridLinesVisibility="Horizontal">
+                        <DataGrid.Columns>
+                            <DataGridCheckBoxColumn Header="" Binding="{Binding IsSelected, Mode=TwoWay}" Width="40"/>
+                            <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="90" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="Display Name" Binding="{Binding Title}" Width="*" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="Service" Binding="{Binding ServiceName}" Width="*" IsReadOnly="True"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </Border>
+
+            <!-- Profile services order -->
+            <Border Grid.Column="1" Classes="panel">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                        <TextBlock Classes="section" Text="PROFILE SERVICES (START/STOP ORDER)"/>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Classes="toolbar" Content="↑" Command="{Binding MoveUpCommand}" Width="40"/>
+                            <Button Classes="toolbar" Content="↓" Command="{Binding MoveDownCommand}" Width="40"/>
+                            <Button Classes="toolbar" Content="Remove selected" Command="{Binding RemoveSelectedProfileServicesCommand}"/>
+                            <Button Classes="toolbar" Content="Clear overrides" Command="{Binding ClearServiceOverridesCommand}"
+                                    ToolTip.Tip="Selected services inherit environment defaults"/>
+                        </StackPanel>
+                        <TextBlock Text="Start order = top→bottom. Stop = reverse. Override columns apply only to the selected environment (blank = inherit env default)."
+                                   Foreground="#5C6B7A" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                    </StackPanel>
+                    <DataGrid ItemsSource="{Binding ProfileServices}"
+                              AutoGenerateColumns="False"
+                              CanUserResizeColumns="True"
+                              Background="Transparent"
+                              Foreground="#E6EDF3"
+                              BorderThickness="0"
+                              GridLinesVisibility="Horizontal">
+                        <DataGrid.Columns>
+                            <DataGridCheckBoxColumn Header="" Binding="{Binding IsSelected, Mode=TwoWay}" Width="36"/>
+                            <DataGridTextColumn Header="#" Binding="{Binding Order}" Width="48" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="Display Name" Binding="{Binding DisplayName}" Width="2*"/>
+                            <DataGridTextColumn Header="Service" Binding="{Binding ServiceName}" Width="*" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="Roles" Binding="{Binding RolesText}" Width="*"/>
+                            <DataGridTextColumn Header="Override startup" Binding="{Binding OverrideStartup}" Width="110"/>
+                            <DataGridTextColumn Header="Override recovery" Binding="{Binding OverrideRecovery}" Width="110"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </Border>
+        </Grid>
+    </DockPanel>
+</Window>

@@ -51,6 +51,9 @@ public partial class MainViewModel : ViewModelBase
     public ObservableCollection<DependencyItemViewModel> DependencyItems { get; } = new();
     public ObservableCollection<string> AvailableProfiles { get; }
     public ObservableCollection<string> AvailableRoles { get; }
+    public ObservableCollection<string> AvailableEnvironments { get; } = new();
+
+    private ProductProfile? _activeProfile;
 
     [ObservableProperty]
     public partial bool IsSimpleMode { get; set; } = true;
@@ -63,6 +66,9 @@ public partial class MainViewModel : ViewModelBase
 
     [ObservableProperty]
     public partial string? SelectedRole { get; set; }
+
+    [ObservableProperty]
+    public partial string? SelectedEnvironment { get; set; }
 
     [ObservableProperty]
     public partial string StatusText { get; set; } = "";
@@ -108,7 +114,12 @@ public partial class MainViewModel : ViewModelBase
 
     public bool ShowRolePicker => !IsSimpleMode && AvailableRoles.Count > 0;
 
+    public bool ShowEnvironmentPicker => !IsSimpleMode && AvailableEnvironments.Count > 0;
+
     public bool ShowSimpleFilter => IsSimpleMode;
+
+    /// <summary>Set by the view to open the Profile Builder window.</summary>
+    public Action<ProductProfile?, string?>? OpenProfileBuilder { get; set; }
 
     public bool HasPrerequisites => PrerequisiteLines.Count > 0;
 
@@ -134,6 +145,7 @@ public partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(ShowSimpleFilter));
         OnPropertyChanged(nameof(ShowProfilePicker));
         OnPropertyChanged(nameof(ShowRolePicker));
+        OnPropertyChanged(nameof(ShowEnvironmentPicker));
         OnPropertyChanged(nameof(ShowNoProfilesHelp));
         UpdateProfileGuidance();
         Refresh();
@@ -142,14 +154,22 @@ public partial class MainViewModel : ViewModelBase
     partial void OnSelectedProfileIdChanged(string? value)
     {
         LoadRolesForSelectedProfile();
+        LoadEnvironmentsForSelectedProfile();
         OnPropertyChanged(nameof(ShowNoProfilesHelp));
         OnPropertyChanged(nameof(ShowRolePicker));
+        OnPropertyChanged(nameof(ShowEnvironmentPicker));
         UpdateProfileGuidance();
         if (!IsSimpleMode)
             Refresh();
     }
 
     partial void OnSelectedRoleChanged(string? value)
+    {
+        if (!IsSimpleMode)
+            Refresh();
+    }
+
+    partial void OnSelectedEnvironmentChanged(string? value)
     {
         if (!IsSimpleMode)
             Refresh();
@@ -222,6 +242,14 @@ public partial class MainViewModel : ViewModelBase
                 }
 
                 list = ServiceFilter.ByNames(live, names).ToList();
+                _activeProfile = profile;
+
+                // Honor profile start/stop order in the grid
+                var ordered = ProfileOrdering.OrderServiceNames(
+                    list.Select(s => s.ServiceName), profile, forStop: false);
+                list = ordered
+                    .Select(n => list.First(s => string.Equals(s.ServiceName, n, StringComparison.OrdinalIgnoreCase)))
+                    .ToList();
 
                 foreach (var r in _prereqs.Evaluate(profile, role))
                 {
@@ -233,6 +261,7 @@ public partial class MainViewModel : ViewModelBase
             }
             else
             {
+                _activeProfile = null;
                 OnPropertyChanged(nameof(HasPrerequisites));
                 list = string.IsNullOrWhiteSpace(SubstringFilter)
                     ? _services.GetServices().ToList()
@@ -285,13 +314,13 @@ public partial class MainViewModel : ViewModelBase
     }
 
     [RelayCommand(CanExecute = nameof(CanOperateOnSelection))]
-    private Task StartSelectedAsync() => RunOnSelectedAsync(names => _services.StartMany(names));
+    private Task StartSelectedAsync() => RunOnSelectedAsync(names => _services.StartMany(names), forStop: false);
 
     [RelayCommand(CanExecute = nameof(CanOperateOnSelection))]
-    private Task StopSelectedAsync() => RunOnSelectedAsync(names => _services.StopMany(names));
+    private Task StopSelectedAsync() => RunOnSelectedAsync(names => _services.StopMany(names), forStop: true);
 
     [RelayCommand(CanExecute = nameof(CanOperateOnSelection))]
-    private Task RestartSelectedAsync() => RunOnSelectedAsync(names => _services.RestartMany(names));
+    private Task RestartSelectedAsync() => RunOnSelectedAsync(names => _services.RestartMany(names), forStop: false);
 
     [RelayCommand(CanExecute = nameof(CanOperateOnSelection))]
     private Task ApplyStartupAsync()
@@ -305,7 +334,7 @@ public partial class MainViewModel : ViewModelBase
             return Task.CompletedTask;
         }
 
-        return RunOnSelectedAsync(names => _services.SetStartupTypeMany(names, startup));
+        return RunOnSelectedAsync(names => _services.SetStartupTypeMany(names, startup), forStop: false);
     }
 
     [RelayCommand(CanExecute = nameof(CanOperateOnSelection))]
@@ -320,7 +349,27 @@ public partial class MainViewModel : ViewModelBase
             return Task.CompletedTask;
         }
 
-        return RunOnSelectedAsync(names => _services.SetRecoveryMany(names, preset));
+        return RunOnSelectedAsync(names => _services.SetRecoveryMany(names, preset), forStop: false);
+    }
+
+    [RelayCommand]
+    private void BuildProfile()
+    {
+        OpenProfileBuilder?.Invoke(null, null);
+    }
+
+    [RelayCommand]
+    private void EditProfile()
+    {
+        if (string.IsNullOrWhiteSpace(SelectedProfileId))
+        {
+            OpenProfileBuilder?.Invoke(null, null);
+            return;
+        }
+
+        var profile = LoadProfile(SelectedProfileId);
+        var path = _profiles.FindPathById(profile?.Id ?? SelectedProfileId);
+        OpenProfileBuilder?.Invoke(profile, path);
     }
 
     [RelayCommand(CanExecute = nameof(CanSelectAll))]
@@ -636,6 +685,53 @@ public partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(ShowRolePicker));
     }
 
+    private void LoadEnvironmentsForSelectedProfile()
+    {
+        AvailableEnvironments.Clear();
+        if (string.IsNullOrWhiteSpace(SelectedProfileId))
+        {
+            SelectedEnvironment = null;
+            OnPropertyChanged(nameof(ShowEnvironmentPicker));
+            return;
+        }
+
+        var profile = LoadProfile(SelectedProfileId);
+        if (profile is null)
+        {
+            SelectedEnvironment = null;
+            OnPropertyChanged(nameof(ShowEnvironmentPicker));
+            return;
+        }
+
+        foreach (var env in profile.Environments)
+            AvailableEnvironments.Add(env.Name);
+
+        if (AvailableEnvironments.Count == 0)
+        {
+            SelectedEnvironment = null;
+        }
+        else
+        {
+            var preferred = profile.DefaultEnvironment;
+            SelectedEnvironment = AvailableEnvironments.FirstOrDefault(e =>
+                                      string.Equals(e, preferred, StringComparison.OrdinalIgnoreCase))
+                                  ?? AvailableEnvironments[0];
+        }
+
+        OnPropertyChanged(nameof(ShowEnvironmentPicker));
+    }
+
+    public void NotifyProfilesChangedFromBuilder()
+    {
+        ReloadAvailableProfiles();
+        if (!string.IsNullOrWhiteSpace(SelectedProfileId))
+        {
+            LoadRolesForSelectedProfile();
+            LoadEnvironmentsForSelectedProfile();
+            Refresh();
+        }
+    }
+
     private void UpdateProfileGuidance()
     {
         if (IsSimpleMode)
@@ -743,7 +839,7 @@ public partial class MainViewModel : ViewModelBase
         return map;
     }
 
-    private async Task RunOnSelectedAsync(Func<IEnumerable<string>, BulkOperationResult> action)
+    private async Task RunOnSelectedAsync(Func<IEnumerable<string>, BulkOperationResult> action, bool forStop)
     {
         if (!EnsureElevated())
             return;
@@ -754,6 +850,9 @@ public partial class MainViewModel : ViewModelBase
             StatusText = "Select one or more services first.";
             return;
         }
+
+        if (_activeProfile is not null)
+            names = ProfileOrdering.OrderServiceNames(names, _activeProfile, forStop).ToList();
 
         try
         {

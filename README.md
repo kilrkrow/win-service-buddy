@@ -3,7 +3,8 @@
 Windows-native tool for managing **product-scoped** Windows Services and documented prerequisites.
 
 - **Simple mode** — filter services by substring (e.g. `Milestone`)
-- **Profile mode** — load a shareable `.wsb.json` profile (services, SCM deps, **profile-defined roles**, role-scoped prereqs such as MSMQ/SQL/IIS)
+- **Profile mode** — load a shareable `.wsb.json` profile (services, SCM deps, **roles**, **environments**, role-scoped prereqs)
+- **Profile Builder** — discover services, set start/stop order, define environments (e.g. Production vs Acceptance policies)
 - **CLI + GUI** — same core library
 - **Bulk edits** — startup type and crash recovery presets
 - **Target** — Windows Server 2012 R2+ / Windows 10/11 (self-contained publish recommended)
@@ -30,7 +31,7 @@ dotnet test WinServiceBuddy.sln
 
 ```powershell
 dotnet run --project src/WinServiceBuddy.Cli -- list --substring Spooler
-dotnet run --project src/WinServiceBuddy.Cli -- list --profile profiles/examples/multi-tier-abstract-sample.wsb.json --role "Application Server"
+dotnet run --project src/WinServiceBuddy.Cli -- list --profile profiles/examples/multi-tier-abstract-sample.wsb.json --role "Application Server" --environment Production
 dotnet run --project src/WinServiceBuddy.Cli -- prereq check --profile profiles/examples/multi-tier-abstract-sample.wsb.json --role "Database Host"
 dotnet run --project src/WinServiceBuddy.Cli -- info
 ```
@@ -45,15 +46,19 @@ dotnet run --project src/WinServiceBuddy.App
 
 If not elevated, use **Run elevated** in the status bar.
 
+Use **Build profile…** / **Edit profile…** to open the Profile Builder window.
+
 ## Profiles
 
 Examples live in `profiles/examples/`:
 
-- `multi-tier-abstract-sample.wsb.json` — profile-defined roles (Application Server, Database Host, Web Front End, …) + role-scoped prereqs
+- `multi-tier-abstract-sample.wsb.json` — **schema v2**: roles + **environments** (Production/Acceptance) + ordered services + prereqs
 - `substring-template.wsb.json` — blank template
 - `milestone-xprotect-sample.wsb.json` / `everbridge-control-center-sample.wsb.json` — thin substring shells for import testing (not vendor docs)
 
-**Roles are not a fixed client/server enum.** Each profile lists its own role names; services and prerequisites attach to those names.
+**Roles** are not a fixed client/server enum — each profile defines its own.
+
+**Environments** live *inside* one product profile: same service list and start order; different desired startup/recovery (e.g. Production = Automatic + restart-3, Acceptance = Manual + none).
 
 Import:
 
