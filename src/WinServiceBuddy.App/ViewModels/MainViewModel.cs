@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
+using System.Text;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using WinServiceBuddy.Core.Models;
@@ -90,6 +92,14 @@ public partial class MainViewModel : ViewModelBase
 
     [ObservableProperty]
     public partial bool IsBusy { get; set; }
+
+    /// <summary>0–100 progress for the active bulk operation.</summary>
+    [ObservableProperty]
+    public partial double OperationProgress { get; set; }
+
+    /// <summary>Short label shown beside the progress bar (e.g. Starting 2/5…).</summary>
+    [ObservableProperty]
+    public partial string OperationDetail { get; set; } = "";
 
     [ObservableProperty]
     public partial bool IsDependenciesPanelOpen { get; set; }
@@ -187,11 +197,14 @@ public partial class MainViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void Refresh()
+    private void Refresh() => RefreshCore(manageBusy: !IsBusy);
+
+    private void RefreshCore(bool manageBusy)
     {
         try
         {
-            IsBusy = true;
+            if (manageBusy)
+                IsBusy = true;
             List<ServiceInfo> list;
             PrerequisiteLines.Clear();
 
@@ -309,18 +322,22 @@ public partial class MainViewModel : ViewModelBase
         }
         finally
         {
-            IsBusy = false;
+            if (manageBusy)
+                IsBusy = false;
         }
     }
 
     [RelayCommand(CanExecute = nameof(CanOperateOnSelection))]
-    private Task StartSelectedAsync() => RunOnSelectedAsync(names => _services.StartMany(names), forStop: false);
+    private Task StartSelectedAsync() =>
+        RunOnSelectedAsync("Starting", n => _services.Start(n), forStop: false, pendingStatus: "Starting…");
 
     [RelayCommand(CanExecute = nameof(CanOperateOnSelection))]
-    private Task StopSelectedAsync() => RunOnSelectedAsync(names => _services.StopMany(names), forStop: true);
+    private Task StopSelectedAsync() =>
+        RunOnSelectedAsync("Stopping", n => _services.Stop(n), forStop: true, pendingStatus: "Stopping…");
 
     [RelayCommand(CanExecute = nameof(CanOperateOnSelection))]
-    private Task RestartSelectedAsync() => RunOnSelectedAsync(names => _services.RestartMany(names), forStop: false);
+    private Task RestartSelectedAsync() =>
+        RunOnSelectedAsync("Restarting", n => _services.Restart(n), forStop: false, pendingStatus: "Restarting…");
 
     [RelayCommand(CanExecute = nameof(CanOperateOnSelection))]
     private Task ApplyStartupAsync()
@@ -334,7 +351,11 @@ public partial class MainViewModel : ViewModelBase
             return Task.CompletedTask;
         }
 
-        return RunOnSelectedAsync(names => _services.SetStartupTypeMany(names, startup), forStop: false);
+        return RunOnSelectedAsync(
+            $"Setting startup → {startup}",
+            n => _services.SetStartupType(n, startup),
+            forStop: false,
+            pendingStatus: "Updating…");
     }
 
     [RelayCommand(CanExecute = nameof(CanOperateOnSelection))]
@@ -349,7 +370,11 @@ public partial class MainViewModel : ViewModelBase
             return Task.CompletedTask;
         }
 
-        return RunOnSelectedAsync(names => _services.SetRecoveryMany(names, preset), forStop: false);
+        return RunOnSelectedAsync(
+            $"Setting recovery → {preset}",
+            n => _services.SetRecovery(n, preset),
+            forStop: false,
+            pendingStatus: "Updating…");
     }
 
     [RelayCommand]
@@ -419,11 +444,13 @@ public partial class MainViewModel : ViewModelBase
         ScrollServiceIntoView?.Invoke(row);
     }
 
-    private bool CanOperateOnSelection() => HasSelection;
+    private bool CanOperateOnSelection() => HasSelection && !IsBusy;
 
-    private bool CanSelectAll() => HasServices && SelectedCount < Services.Count;
+    private bool CanSelectAll() => HasServices && SelectedCount < Services.Count && !IsBusy;
 
-    private bool CanSelectNone() => HasSelection;
+    private bool CanSelectNone() => HasSelection && !IsBusy;
+
+    partial void OnIsBusyChanged(bool value) => NotifySelectionChanged();
 
     [RelayCommand]
     private void RelaunchElevated()
@@ -839,7 +866,11 @@ public partial class MainViewModel : ViewModelBase
         return map;
     }
 
-    private async Task RunOnSelectedAsync(Func<IEnumerable<string>, BulkOperationResult> action, bool forStop)
+    private async Task RunOnSelectedAsync(
+        string actionVerb,
+        Func<string, OperationResult> singleOp,
+        bool forStop,
+        string pendingStatus)
     {
         if (!EnsureElevated())
             return;
@@ -854,21 +885,124 @@ public partial class MainViewModel : ViewModelBase
         if (_activeProfile is not null)
             names = ProfileOrdering.OrderServiceNames(names, _activeProfile, forStop).ToList();
 
+        var total = names.Count;
+        var ok = 0;
+        var fail = 0;
+        var log = new StringBuilder();
+
         try
         {
             IsBusy = true;
-            var result = await Task.Run(() => action(names));
-            StatusText = $"{result.Succeeded} succeeded, {result.Failed} failed.";
-            Refresh();
+            OperationProgress = 0;
+            OperationDetail = $"{actionVerb} 0/{total}…";
+            StatusText = $"{actionVerb} {total} service(s)…";
+
+            for (var i = 0; i < total; i++)
+            {
+                var name = names[i];
+                var display = Services.FirstOrDefault(s =>
+                    string.Equals(s.ServiceName, name, StringComparison.OrdinalIgnoreCase))?.Title ?? name;
+
+                await UiAsync(() =>
+                {
+                    OperationDetail = $"{actionVerb} {i + 1}/{total}: {display}";
+                    StatusText = OperationDetail;
+                    var row = Services.FirstOrDefault(s =>
+                        string.Equals(s.ServiceName, name, StringComparison.OrdinalIgnoreCase));
+                    if (row is not null)
+                        row.Status = pendingStatus;
+                });
+
+                OperationResult result;
+                try
+                {
+                    result = await Task.Run(() => singleOp(name));
+                }
+                catch (Exception ex)
+                {
+                    result = OperationResult.Fail(name, ex.Message);
+                }
+
+                if (result.Success)
+                    ok++;
+                else
+                    fail++;
+
+                log.AppendLine(result.Success
+                    ? $"OK  {display}: {result.Message}"
+                    : $"FAIL {display}: {result.Message}");
+
+                await UiAsync(() =>
+                {
+                    OperationProgress = (i + 1) * 100.0 / total;
+                    var row = Services.FirstOrDefault(s =>
+                        string.Equals(s.ServiceName, name, StringComparison.OrdinalIgnoreCase));
+                    if (row is null)
+                        return;
+
+                    if (result.Success)
+                    {
+                        // Best-effort live status without full refresh mid-loop
+                        if (pendingStatus.StartsWith("Start", StringComparison.OrdinalIgnoreCase))
+                            row.Status = "Running";
+                        else if (pendingStatus.StartsWith("Stop", StringComparison.OrdinalIgnoreCase))
+                            row.Status = "Stopped";
+                        else
+                            row.Status = "Updated";
+                    }
+                    else
+                    {
+                        row.Status = "Error";
+                    }
+                });
+            }
+
+            OperationDetail = fail == 0
+                ? $"Done — {ok}/{total} succeeded"
+                : $"Done — {ok} succeeded, {fail} failed (of {total})";
+            StatusText = OperationDetail + (fail > 0 ? "  ·  see last failure in status" : "");
+            if (fail > 0)
+            {
+                var lastFail = log.ToString()
+                    .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                    .LastOrDefault(l => l.StartsWith("FAIL", StringComparison.Ordinal));
+                if (lastFail is not null)
+                    StatusText = $"{OperationDetail}  ·  {lastFail.Trim()}";
+            }
+
+            var summary = fail == 0
+                ? $"Done — {ok}/{total} succeeded"
+                : $"Done — {ok} succeeded, {fail} failed (of {total})";
+            var failLine = log.ToString()
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .LastOrDefault(l => l.StartsWith("FAIL", StringComparison.Ordinal));
+
+            // Full refresh so startup/recovery columns and true SCM state are accurate
+            RefreshCore(manageBusy: false);
+            StatusText = failLine is null ? summary : $"{summary}  ·  {failLine}";
+            OperationDetail = StatusText;
+            OperationProgress = 100;
         }
         catch (Exception ex)
         {
-            StatusText = ex.Message;
+            StatusText = $"{actionVerb} aborted: {ex.Message}";
+            OperationDetail = StatusText;
         }
         finally
         {
             IsBusy = false;
         }
+    }
+
+    private static Task UiAsync(Action action)
+    {
+        if (Dispatcher.UIThread.CheckAccess())
+        {
+            action();
+            return Task.CompletedTask;
+        }
+
+        return Dispatcher.UIThread.InvokeAsync(action).GetTask();
     }
 
     private void ClearServices()
