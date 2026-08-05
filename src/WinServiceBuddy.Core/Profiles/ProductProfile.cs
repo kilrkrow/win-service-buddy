@@ -9,8 +9,15 @@ public sealed class ProductProfile
     public string Name { get; set; } = "";
     public string? Description { get; set; }
     public string? ProductVersionNote { get; set; }
-    public List<string> DefaultRoles { get; set; } = new() { "Server" };
-    public List<string> Roles { get; set; } = new() { "Server", "Client" };
+    /// <summary>Preferred role(s) when the profile is loaded. Must appear in <see cref="Roles"/> when that list is non-empty.</summary>
+    public List<string> DefaultRoles { get; set; } = new();
+
+    /// <summary>
+    /// Profile-defined machine functions (not a fixed client/server enum).
+    /// Examples: "Application Server", "Database Host", "Web Front End", "Client Workstation".
+    /// Services and prerequisites reference these by name.
+    /// </summary>
+    public List<string> Roles { get; set; } = new();
     public bool IncludeScmDependencies { get; set; } = true;
     public string DependencyDirection { get; set; } = "dependsOn";
     public List<ProfileServiceEntry> Services { get; set; } = new();

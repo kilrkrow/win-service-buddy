@@ -206,7 +206,11 @@ public sealed class ProfileStore
 
     private static bool RoleMatches(IReadOnlyList<string> roles, string activeRole)
     {
+        // Empty role list on an entry = applies to every role.
+        // Active role "(all)" = operator is viewing the whole profile without a role filter.
         if (roles.Count == 0)
+            return true;
+        if (string.Equals(activeRole, "(all)", StringComparison.OrdinalIgnoreCase))
             return true;
         return roles.Any(r => string.Equals(r, activeRole, StringComparison.OrdinalIgnoreCase));
     }

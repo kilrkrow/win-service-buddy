@@ -3,7 +3,7 @@
 Windows-native tool for managing **product-scoped** Windows Services and documented prerequisites.
 
 - **Simple mode** — filter services by substring (e.g. `Milestone`)
-- **Profile mode** — load a shareable `.wsb.json` profile (services, SCM deps, role-based prereqs like MSMQ)
+- **Profile mode** — load a shareable `.wsb.json` profile (services, SCM deps, **profile-defined roles**, role-scoped prereqs such as MSMQ/SQL/IIS)
 - **CLI + GUI** — same core library
 - **Bulk edits** — startup type and crash recovery presets
 - **Target** — Windows Server 2012 R2+ / Windows 10/11 (self-contained publish recommended)
@@ -30,8 +30,8 @@ dotnet test WinServiceBuddy.sln
 
 ```powershell
 dotnet run --project src/WinServiceBuddy.Cli -- list --substring Spooler
-dotnet run --project src/WinServiceBuddy.Cli -- list --profile profiles/examples/everbridge-control-center-sample.wsb.json --role Server
-dotnet run --project src/WinServiceBuddy.Cli -- prereq check --profile profiles/examples/everbridge-control-center-sample.wsb.json --role Server
+dotnet run --project src/WinServiceBuddy.Cli -- list --profile profiles/examples/multi-tier-abstract-sample.wsb.json --role "Application Server"
+dotnet run --project src/WinServiceBuddy.Cli -- prereq check --profile profiles/examples/multi-tier-abstract-sample.wsb.json --role "Database Host"
 dotnet run --project src/WinServiceBuddy.Cli -- info
 ```
 
@@ -49,9 +49,11 @@ If not elevated, use **Run elevated** in the status bar.
 
 Examples live in `profiles/examples/`:
 
-- `everbridge-control-center-sample.wsb.json` — includes MSMQ prereq for Server/Client
-- `milestone-xprotect-sample.wsb.json` — substring match sample
+- `multi-tier-abstract-sample.wsb.json` — profile-defined roles (Application Server, Database Host, Web Front End, …) + role-scoped prereqs
 - `substring-template.wsb.json` — blank template
+- `milestone-xprotect-sample.wsb.json` / `everbridge-control-center-sample.wsb.json` — thin substring shells for import testing (not vendor docs)
+
+**Roles are not a fixed client/server enum.** Each profile lists its own role names; services and prerequisites attach to those names.
 
 Import:
 

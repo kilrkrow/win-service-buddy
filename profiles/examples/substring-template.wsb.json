@@ -2,16 +2,16 @@
   "schemaVersion": 1,
   "id": "substring-template",
   "name": "Substring template",
-  "description": "Empty shell: set matchRules.value to your product token.",
-  "defaultRoles": [ "Server" ],
-  "roles": [ "Server", "Client" ],
+  "description": "Empty shell: set matchRules.value to your product token. Roles are free-form strings you define.",
+  "defaultRoles": [ "Application Server" ],
+  "roles": [ "Application Server", "Database Host", "Client Workstation" ],
   "includeScmDependencies": true,
   "services": [],
   "matchRules": [
     {
       "type": "substring",
       "value": "YourProductToken",
-      "roles": [ "Server", "Client" ]
+      "roles": [ "Application Server", "Database Host", "Client Workstation" ]
     }
   ],
   "prerequisites": [],
