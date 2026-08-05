@@ -17,20 +17,25 @@ public partial class MainViewModel : ViewModelBase
     private readonly IWindowsServiceManager _services;
     private readonly ProfileStore _profiles;
     private readonly PrerequisiteEvaluator _prereqs;
+    private readonly AppSettingsStore _settingsStore;
     private readonly Dictionary<string, string> _profilePathById = new(StringComparer.OrdinalIgnoreCase);
+    private AppSettings _settings;
+    private bool _suppressDefaultProfileSave;
 
     /// <summary>Index used as the Shift+click range anchor for checkbox multi-select.</summary>
     private int _selectionAnchorIndex = -1;
 
     public MainViewModel()
-        : this(new WindowsServiceManager(), new ProfileStore())
+        : this(new WindowsServiceManager(), new ProfileStore(), new AppSettingsStore())
     {
     }
 
-    public MainViewModel(IWindowsServiceManager services, ProfileStore profiles)
+    public MainViewModel(IWindowsServiceManager services, ProfileStore profiles, AppSettingsStore? settingsStore = null)
     {
         _services = services;
         _profiles = profiles;
+        _settingsStore = settingsStore ?? new AppSettingsStore();
+        _settings = _settingsStore.Load();
         _prereqs = new PrerequisiteEvaluator(services);
         IsElevated = Elevation.IsElevated();
         HostName = Environment.MachineName;
@@ -38,7 +43,9 @@ public partial class MainViewModel : ViewModelBase
         AvailableRoles = new ObservableCollection<string>();
         Services.CollectionChanged += OnServicesCollectionChanged;
         ReloadAvailableProfiles();
+        ApplyLaunchDefaults();
         UpdateProfileGuidance();
+        UpdateDefaultProfileFlag();
         Refresh();
     }
 
@@ -71,6 +78,10 @@ public partial class MainViewModel : ViewModelBase
 
     [ObservableProperty]
     public partial string? SelectedEnvironment { get; set; }
+
+    /// <summary>True when the currently selected profile is the launch default.</summary>
+    [ObservableProperty]
+    public partial bool IsSelectedProfileDefault { get; set; }
 
     [ObservableProperty]
     public partial string StatusText { get; set; } = "";
@@ -128,6 +139,9 @@ public partial class MainViewModel : ViewModelBase
 
     public bool ShowSimpleFilter => IsSimpleMode;
 
+    public bool CanSetDefaultProfile =>
+        !IsSimpleMode && !string.IsNullOrWhiteSpace(SelectedProfileId);
+
     /// <summary>Set by the view to open the Profile Builder window.</summary>
     public Action<ProductProfile?, string?>? OpenProfileBuilder { get; set; }
 
@@ -165,22 +179,54 @@ public partial class MainViewModel : ViewModelBase
     {
         LoadRolesForSelectedProfile();
         LoadEnvironmentsForSelectedProfile();
+        UpdateDefaultProfileFlag();
         OnPropertyChanged(nameof(ShowNoProfilesHelp));
         OnPropertyChanged(nameof(ShowRolePicker));
         OnPropertyChanged(nameof(ShowEnvironmentPicker));
+        OnPropertyChanged(nameof(CanSetDefaultProfile));
         UpdateProfileGuidance();
         if (!IsSimpleMode)
             Refresh();
     }
 
+    partial void OnIsSelectedProfileDefaultChanged(bool value)
+    {
+        if (_suppressDefaultProfileSave || string.IsNullOrWhiteSpace(SelectedProfileId))
+            return;
+
+        if (value)
+        {
+            _settings.DefaultProfileId = SelectedProfileId;
+            _settings.LaunchInProfileMode = true;
+            _settings.DefaultEnvironment = SelectedEnvironment;
+            _settings.DefaultRole = SelectedRole;
+            _settingsStore.Save(_settings);
+            StatusText = $"Default profile set to “{SelectedProfileId}” — app will open in Profile mode next launch.";
+            return;
+        }
+
+        // Only clear stored default when unchecking the profile that *is* the default
+        if (string.Equals(_settings.DefaultProfileId, SelectedProfileId, StringComparison.OrdinalIgnoreCase))
+        {
+            _settings.DefaultProfileId = null;
+            _settings.LaunchInProfileMode = false;
+            _settings.DefaultEnvironment = null;
+            _settings.DefaultRole = null;
+            _settingsStore.Save(_settings);
+            StatusText = "Default profile cleared — app will open in Simple mode next launch.";
+        }
+    }
+
     partial void OnSelectedRoleChanged(string? value)
     {
+        PersistDefaultContextIfNeeded();
         if (!IsSimpleMode)
             Refresh();
     }
 
     partial void OnSelectedEnvironmentChanged(string? value)
     {
+        PersistDefaultContextIfNeeded();
         if (!IsSimpleMode)
             Refresh();
     }
@@ -395,6 +441,95 @@ public partial class MainViewModel : ViewModelBase
         var profile = LoadProfile(SelectedProfileId);
         var path = _profiles.FindPathById(profile?.Id ?? SelectedProfileId);
         OpenProfileBuilder?.Invoke(profile, path);
+    }
+
+    [RelayCommand]
+    private void SetAsDefaultProfile()
+    {
+        if (string.IsNullOrWhiteSpace(SelectedProfileId))
+        {
+            StatusText = "Select a profile first.";
+            return;
+        }
+
+        IsSelectedProfileDefault = true;
+    }
+
+    [RelayCommand]
+    private void ClearDefaultProfile()
+    {
+        IsSelectedProfileDefault = false;
+    }
+
+    private void ApplyLaunchDefaults()
+    {
+        if (!_settings.LaunchInProfileMode || string.IsNullOrWhiteSpace(_settings.DefaultProfileId))
+            return;
+
+        // Ensure default is still available
+        if (!AvailableProfiles.Any(p =>
+                string.Equals(p, _settings.DefaultProfileId, StringComparison.OrdinalIgnoreCase)))
+        {
+            // Try loading by id from store even if list key differs
+            var found = _profiles.FindById(_settings.DefaultProfileId);
+            if (found is null)
+                return;
+            if (!AvailableProfiles.Contains(found.Id))
+                AvailableProfiles.Add(found.Id);
+            _settings.DefaultProfileId = found.Id;
+        }
+
+        IsSimpleMode = false;
+        SelectedProfileId = AvailableProfiles.FirstOrDefault(p =>
+            string.Equals(p, _settings.DefaultProfileId, StringComparison.OrdinalIgnoreCase))
+            ?? _settings.DefaultProfileId;
+
+        // SelectedProfileId change loads roles/envs; re-apply stored preferences
+        if (!string.IsNullOrWhiteSpace(_settings.DefaultRole) &&
+            AvailableRoles.Any(r => string.Equals(r, _settings.DefaultRole, StringComparison.OrdinalIgnoreCase)))
+        {
+            SelectedRole = _settings.DefaultRole;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_settings.DefaultEnvironment) &&
+            AvailableEnvironments.Any(e =>
+                string.Equals(e, _settings.DefaultEnvironment, StringComparison.OrdinalIgnoreCase)))
+        {
+            SelectedEnvironment = _settings.DefaultEnvironment;
+        }
+
+        UpdateDefaultProfileFlag();
+    }
+
+    /// <summary>Persist current role/env when they change while this profile is the default.</summary>
+    private void PersistDefaultContextIfNeeded()
+    {
+        if (string.IsNullOrWhiteSpace(SelectedProfileId))
+            return;
+        if (!string.Equals(_settings.DefaultProfileId, SelectedProfileId, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        _settings.DefaultRole = SelectedRole;
+        _settings.DefaultEnvironment = SelectedEnvironment;
+        _settingsStore.Save(_settings);
+    }
+
+    private void UpdateDefaultProfileFlag()
+    {
+        var isDefault = !string.IsNullOrWhiteSpace(SelectedProfileId) &&
+                        string.Equals(_settings.DefaultProfileId, SelectedProfileId, StringComparison.OrdinalIgnoreCase);
+        if (IsSelectedProfileDefault == isDefault)
+            return;
+
+        _suppressDefaultProfileSave = true;
+        try
+        {
+            IsSelectedProfileDefault = isDefault;
+        }
+        finally
+        {
+            _suppressDefaultProfileSave = false;
+        }
     }
 
     [RelayCommand(CanExecute = nameof(CanSelectAll))]

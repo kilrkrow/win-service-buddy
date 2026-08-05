@@ -215,7 +215,11 @@
                             <!-- Simple mode controls -->
                             <StackPanel IsVisible="{Binding ShowSimpleFilter}">
                                 <TextBlock Classes="section" Text="SUBSTRING FILTER"/>
-                                <TextBox Text="{Binding SubstringFilter}" PlaceholderText="e.g. product token" Margin="0,0,0,8"/>
+                                <TextBox Text="{Binding SubstringFilter}" PlaceholderText="e.g. product token" Margin="0,0,0,8">
+                                    <TextBox.KeyBindings>
+                                        <KeyBinding Gesture="Enter" Command="{Binding RefreshCommand}"/>
+                                    </TextBox.KeyBindings>
+                                </TextBox>
                                 <Button Classes="toolbar accent" Content="Apply filter / refresh"
                                         Command="{Binding RefreshCommand}"
                                         HorizontalAlignment="Stretch"/>
@@ -248,6 +252,12 @@
                                           HorizontalAlignment="Stretch"
                                           PlaceholderText="Select a profile…"
                                           Margin="0,0,0,8"/>
+                                <CheckBox IsChecked="{Binding IsSelectedProfileDefault}"
+                                          IsEnabled="{Binding CanSetDefaultProfile}"
+                                          Content="Default profile (open this on launch)"
+                                          Margin="0,0,0,8"
+                                          Foreground="#C5D0DA"
+                                          ToolTip.Tip="Launch in Profile mode with this profile (and last role/environment) next time."/>
                                 <Button Classes="toolbar" Content="Browse / import…"
                                         Command="{Binding BrowseProfileCommand}"
                                         HorizontalAlignment="Stretch" Margin="0,0,0,12"/>
