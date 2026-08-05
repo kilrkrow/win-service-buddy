@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using WinServiceBuddy.Core.Models;
@@ -29,6 +31,7 @@ public partial class MainViewModel : ViewModelBase
         HostName = Environment.MachineName;
         AvailableProfiles = new ObservableCollection<string>();
         AvailableRoles = new ObservableCollection<string>();
+        Services.CollectionChanged += OnServicesCollectionChanged;
         ReloadAvailableProfiles();
         UpdateProfileGuidance();
         Refresh();
@@ -106,6 +109,12 @@ public partial class MainViewModel : ViewModelBase
 
     public bool HasPrerequisites => PrerequisiteLines.Count > 0;
 
+    public int SelectedCount => Services.Count(s => s.IsSelected);
+
+    public bool HasSelection => SelectedCount > 0;
+
+    public bool HasServices => Services.Count > 0;
+
     public string ModeLabel => IsSimpleMode ? "Simple" : "Profile";
 
     public string MainGridColumnDefinitions => IsDependenciesPanelOpen ? "260,*,300" : "260,*";
@@ -170,7 +179,7 @@ public partial class MainViewModel : ViewModelBase
             {
                 if (string.IsNullOrWhiteSpace(SelectedProfileId))
                 {
-                    Services.Clear();
+                    ClearServices();
                     FocusedService = null;
                     UpdateDependenciesPanelContent();
                     StatusText = HasProfiles
@@ -183,14 +192,14 @@ public partial class MainViewModel : ViewModelBase
                 if (profile is null)
                 {
                     StatusText = $"Profile not found: {SelectedProfileId}";
-                    Services.Clear();
+                    ClearServices();
                     return;
                 }
 
                 var role = SelectedRole;
                 if (string.IsNullOrWhiteSpace(role))
                 {
-                    Services.Clear();
+                    ClearServices();
                     StatusText = "Select a role defined by this profile.";
                     return;
                 }
@@ -241,7 +250,8 @@ public partial class MainViewModel : ViewModelBase
                 }
             }
 
-            Services.Clear();
+            // Clear without leaking PropertyChanged handlers
+            ClearServices();
             foreach (var s in list)
                 Services.Add(new ServiceRowViewModel(s, lookup));
 
@@ -251,6 +261,7 @@ public partial class MainViewModel : ViewModelBase
                     string.Equals(s.ServiceName, focusedName, StringComparison.OrdinalIgnoreCase));
 
             UpdateDependenciesPanelContent();
+            NotifySelectionChanged();
 
             var running = list.Count(s => s.IsRunning);
             StatusText =
@@ -266,16 +277,16 @@ public partial class MainViewModel : ViewModelBase
         }
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanOperateOnSelection))]
     private Task StartSelectedAsync() => RunOnSelectedAsync(names => _services.StartMany(names));
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanOperateOnSelection))]
     private Task StopSelectedAsync() => RunOnSelectedAsync(names => _services.StopMany(names));
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanOperateOnSelection))]
     private Task RestartSelectedAsync() => RunOnSelectedAsync(names => _services.RestartMany(names));
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanOperateOnSelection))]
     private Task ApplyStartupAsync()
     {
         if (!EnsureElevated())
@@ -290,7 +301,7 @@ public partial class MainViewModel : ViewModelBase
         return RunOnSelectedAsync(names => _services.SetStartupTypeMany(names, startup));
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanOperateOnSelection))]
     private Task ApplyRecoveryAsync()
     {
         if (!EnsureElevated())
@@ -305,19 +316,27 @@ public partial class MainViewModel : ViewModelBase
         return RunOnSelectedAsync(names => _services.SetRecoveryMany(names, preset));
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanSelectAll))]
     private void SelectAll()
     {
         foreach (var s in Services)
             s.IsSelected = true;
+        NotifySelectionChanged();
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanSelectNone))]
     private void SelectNone()
     {
         foreach (var s in Services)
             s.IsSelected = false;
+        NotifySelectionChanged();
     }
+
+    private bool CanOperateOnSelection() => HasSelection;
+
+    private bool CanSelectAll() => HasServices && SelectedCount < Services.Count;
+
+    private bool CanSelectNone() => HasSelection;
 
     [RelayCommand]
     private void RelaunchElevated()
@@ -462,6 +481,7 @@ public partial class MainViewModel : ViewModelBase
         foreach (var s in Services)
             s.IsSelected = false;
         row.IsSelected = true;
+        NotifySelectionChanged();
 
         // Force property change even if the same instance was already focused
         // so the view re-scrolls the DataGrid to this row.
@@ -692,11 +712,8 @@ public partial class MainViewModel : ViewModelBase
 
         var names = Services.Where(s => s.IsSelected).Select(s => s.ServiceName).ToList();
         if (names.Count == 0)
-            names = Services.Select(s => s.ServiceName).ToList();
-
-        if (names.Count == 0)
         {
-            StatusText = "No services in view.";
+            StatusText = "Select one or more services first.";
             return;
         }
 
@@ -715,6 +732,56 @@ public partial class MainViewModel : ViewModelBase
         {
             IsBusy = false;
         }
+    }
+
+    private void ClearServices()
+    {
+        foreach (var s in Services)
+            s.PropertyChanged -= OnServiceRowPropertyChanged;
+        Services.Clear();
+        NotifySelectionChanged();
+    }
+
+    private void OnServicesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.OldItems is not null)
+        {
+            foreach (ServiceRowViewModel row in e.OldItems)
+                row.PropertyChanged -= OnServiceRowPropertyChanged;
+        }
+
+        if (e.NewItems is not null)
+        {
+            foreach (ServiceRowViewModel row in e.NewItems)
+                row.PropertyChanged += OnServiceRowPropertyChanged;
+        }
+
+        if (e.Action == NotifyCollectionChangedAction.Reset)
+        {
+            // Handlers already removed in ClearServices when we clear intentionally.
+        }
+
+        NotifySelectionChanged();
+    }
+
+    private void OnServiceRowPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(ServiceRowViewModel.IsSelected) or null)
+            NotifySelectionChanged();
+    }
+
+    private void NotifySelectionChanged()
+    {
+        OnPropertyChanged(nameof(SelectedCount));
+        OnPropertyChanged(nameof(HasSelection));
+        OnPropertyChanged(nameof(HasServices));
+        StartSelectedCommand.NotifyCanExecuteChanged();
+        StopSelectedCommand.NotifyCanExecuteChanged();
+        RestartSelectedCommand.NotifyCanExecuteChanged();
+        ApplyStartupCommand.NotifyCanExecuteChanged();
+        ApplyRecoveryCommand.NotifyCanExecuteChanged();
+        SelectAllCommand.NotifyCanExecuteChanged();
+        SelectNoneCommand.NotifyCanExecuteChanged();
     }
 
     private bool EnsureElevated()
