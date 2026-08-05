@@ -14,33 +14,17 @@ Filter related services, load shareable product **profiles** (roles + environmen
 
 ## Screenshots
 
-### Simple mode — filter & manage services
+### Simple mode
 
-Substring filter (e.g. product name token), multi-select, bulk start/stop/restart, startup type, and recovery presets.
+Substring filter, multi-select, bulk start/stop/restart, startup type, recovery presets, and dependency counts.
 
-![Simple mode service grid](docs/screenshots/01-simple-mode.png)
+![Simple mode](docs/screenshots/01-simple-mode.png)
 
-<p align="center"><img src="docs/screenshots/01b-simple-mode-hero.jpg" alt="Simple mode overview" width="900"/></p>
+### Profile mode
 
-### Profile mode — product profiles, environments, builder entry
-
-Load a `.wsb.json` profile, pick **environment** (Production / Acceptance) and **role**, set a **default profile** for next launch, or open the Profile Builder.
+Load a `.wsb.json` profile (or browse/import when none are installed). Entry points for **Build profile…** / **Edit profile…**.
 
 ![Profile mode](docs/screenshots/02-profile-mode.png)
-
-### Profile Builder — discover, order, environments
-
-Discover services by substring, add them to a product profile, set start/stop order, and define environment policies (e.g. Production = Automatic + restart-3, Acceptance = Manual + none).
-
-<p align="center"><img src="docs/screenshots/03-profile-builder.jpg" alt="Profile Builder" width="900"/></p>
-
-### Operations progress
-
-Start/stop/restart and bulk config show live progress (status text, progress bar, per-row state).
-
-<p align="center"><img src="docs/screenshots/04-profile-ops-progress.jpg" alt="Operation progress" width="900"/></p>
-
-> Real captures in `docs/screenshots/01-simple-mode.png` and `02-profile-mode.png`. Hero/builder images illustrate the intended UX (layout continues to evolve).
 
 ---
 
@@ -57,6 +41,7 @@ Start/stop/restart and bulk config show live progress (status text, progress bar
 - **Bulk edits** — Automatic / Manual / Disabled · recovery restart-3 / none  
 - **CLI** (`wsbuddy`) — same core library as the GUI  
 - **Elevation** — relaunch elevated when needed for service control  
+- **Progress feedback** — status + progress bar while starting/stopping/configuring  
 
 ---
 
@@ -78,6 +63,7 @@ dotnet run --project src/WinServiceBuddy.App
 - Use **Run elevated** for start/stop/config changes  
 - **Profile** mode → **Build profile…** to author a product profile  
 - Check **Default profile (open this on launch)** so the next start opens that profile  
+- Press **Enter** in filter fields to apply search  
 
 ### CLI
 
