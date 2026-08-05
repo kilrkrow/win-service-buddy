@@ -37,6 +37,9 @@ public partial class MainViewModel : ViewModelBase
     /// <summary>Optional: set by the view to open a file picker. Returns full path or null.</summary>
     public Func<Task<string?>>? PickProfileFileAsync { get; set; }
 
+    /// <summary>Optional: set by the view to scroll/select a row in the services DataGrid.</summary>
+    public Action<ServiceRowViewModel>? ScrollServiceIntoView { get; set; }
+
     public ObservableCollection<ServiceRowViewModel> Services { get; } = new();
     public ObservableCollection<string> PrerequisiteLines { get; } = new();
     public ObservableCollection<DependencyItemViewModel> DependencyItems { get; } = new();
@@ -459,9 +462,18 @@ public partial class MainViewModel : ViewModelBase
         foreach (var s in Services)
             s.IsSelected = false;
         row.IsSelected = true;
+
+        // Force property change even if the same instance was already focused
+        // so the view re-scrolls the DataGrid to this row.
+        if (ReferenceEquals(FocusedService, row))
+            FocusedService = null;
+
         FocusedService = row;
         IsDependenciesPanelOpen = true;
         UpdateDependenciesPanelContent();
+
+        // Explicit scroll request (selection alone does not move the viewport)
+        ScrollServiceIntoView?.Invoke(row);
     }
 
     /// <summary>Import sample profiles from the repo/examples folder into the user profile store (dev convenience).</summary>

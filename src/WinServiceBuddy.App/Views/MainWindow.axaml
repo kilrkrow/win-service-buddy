@@ -205,15 +205,17 @@
                 <Border Classes="panel" Margin="0,0,0,0">
                     <DockPanel>
                         <TextBlock DockPanel.Dock="Top" Classes="section" Text="SERVICES"/>
-                        <DataGrid ItemsSource="{Binding Services}"
-                                  SelectedItem="{Binding FocusedService}"
+                        <DataGrid x:Name="ServicesGrid"
+                                  ItemsSource="{Binding Services}"
+                                  SelectedItem="{Binding FocusedService, Mode=TwoWay}"
                                   AutoGenerateColumns="False"
                                   CanUserResizeColumns="True"
                                   CanUserSortColumns="True"
                                   GridLinesVisibility="Horizontal"
                                   BorderThickness="0"
                                   Background="Transparent"
-                                  Foreground="#E6EDF3">
+                                  Foreground="#E6EDF3"
+                                  SelectionMode="Single">
                             <DataGrid.Columns>
                                 <DataGridCheckBoxColumn Header="" Binding="{Binding IsSelected, Mode=TwoWay}" Width="40"/>
                                 <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100" IsReadOnly="True"/>
