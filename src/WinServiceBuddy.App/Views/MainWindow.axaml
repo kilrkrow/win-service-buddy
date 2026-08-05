@@ -100,16 +100,53 @@
         <Style Selector="DataGrid#ServicesGrid DataGridRow">
             <Setter Property="FocusAdorner" Value="{x:Null}"/>
         </Style>
+
+        <!-- Dark, slim sidebar scrollbar (default Fluent bar looks wrong on our panels) -->
+        <Style Selector="ScrollViewer.sidebar-scroll">
+            <Setter Property="AllowAutoHide" Value="False"/>
+            <Setter Property="HorizontalScrollBarVisibility" Value="Disabled"/>
+            <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
+        </Style>
+        <Style Selector="ScrollViewer.sidebar-scroll ScrollBar">
+            <Setter Property="Width" Value="8"/>
+            <Setter Property="Margin" Value="2,0,0,0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Opacity" Value="0.85"/>
+        </Style>
+        <Style Selector="ScrollViewer.sidebar-scroll ScrollBar Thumb">
+            <Setter Property="Background" Value="#3A4A58"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="MinHeight" Value="32"/>
+        </Style>
+        <Style Selector="ScrollViewer.sidebar-scroll ScrollBar Thumb:pointerover">
+            <Setter Property="Background" Value="#5C6B7A"/>
+        </Style>
+        <Style Selector="ScrollViewer.sidebar-scroll ScrollBar /template/ RepeatButton">
+            <Setter Property="IsVisible" Value="False"/>
+        </Style>
     </Window.Styles>
 
     <DockPanel Margin="12">
         <Border DockPanel.Dock="Bottom" Background="#0B1014" Padding="12,8" Margin="0,12,0,0" CornerRadius="6">
-            <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Text="{Binding StatusText}" Foreground="#8B9AAB" VerticalAlignment="Center" TextWrapping="Wrap"/>
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+            <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto">
+                <StackPanel Orientation="Vertical" Spacing="4">
+                    <TextBlock Text="{Binding StatusText}" Foreground="#8B9AAB" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                    <Grid IsVisible="{Binding IsBusy}" ColumnDefinitions="*,Auto" ColumnSpacing="10" Margin="0,2,0,0">
+                        <ProgressBar Minimum="0" Maximum="100" Value="{Binding OperationProgress}"
+                                     Height="6" MinHeight="6"
+                                     Foreground="#00C2A8" Background="#1E2A33"/>
+                        <TextBlock Grid.Column="1" Text="{Binding OperationDetail}"
+                                   Foreground="#5EEAD4" FontSize="11" VerticalAlignment="Center"
+                                   MaxWidth="420" TextTrimming="CharacterEllipsis"/>
+                    </Grid>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <Border Background="#2A2010" CornerRadius="4" Padding="8,4" IsVisible="{Binding IsBusy}" Margin="0,0,4,0">
+                        <TextBlock Text="Working…" Foreground="#F0C929" FontSize="12" FontWeight="SemiBold"/>
+                    </Border>
                     <TextBlock Text="{Binding HostName}" Foreground="#5C6B7A" VerticalAlignment="Center"/>
                     <Button Classes="toolbar" Content="Run elevated" Command="{Binding RelaunchElevatedCommand}"
-                            IsVisible="{Binding !IsElevated}"/>
+                            IsVisible="{Binding !IsElevated}" IsEnabled="{Binding !IsBusy}"/>
                     <Border Background="#123D32" CornerRadius="4" Padding="8,4" IsVisible="{Binding IsElevated}">
                         <TextBlock Text="Elevated" Foreground="#3DDC97" FontSize="12"/>
                     </Border>
@@ -119,7 +156,7 @@
 
         <Border DockPanel.Dock="Top" Classes="panel" Margin="0,0,0,12">
             <Grid ColumnDefinitions="*,Auto">
-                <StackPanel Orientation="Horizontal">
+                <StackPanel Orientation="Horizontal" IsEnabled="{Binding !IsBusy}">
                     <Button Classes="toolbar accent" Content="Start" Command="{Binding StartSelectedCommand}"/>
                     <Button Classes="toolbar" Content="Stop" Command="{Binding StopSelectedCommand}"/>
                     <Button Classes="toolbar" Content="Restart" Command="{Binding RestartSelectedCommand}"/>
@@ -127,26 +164,29 @@
                     <Button Classes="toolbar" Content="Select all" Command="{Binding SelectAllCommand}" Margin="16,0,8,0"/>
                     <Button Classes="toolbar" Content="Select none" Command="{Binding SelectNoneCommand}"/>
                 </StackPanel>
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center"
+                            IsEnabled="{Binding HasSelection}">
                     <TextBlock Text="Bulk startup" Foreground="#8B9AAB" VerticalAlignment="Center"/>
                     <ComboBox Width="160" SelectedItem="{Binding SelectedStartup}"
-                              ItemsSource="{Binding StartupOptions}"/>
+                              ItemsSource="{Binding StartupOptions}"
+                              IsEnabled="{Binding HasSelection}"/>
                     <Button Classes="toolbar accent" Content="Apply" Command="{Binding ApplyStartupCommand}"/>
                     <TextBlock Text="Recovery" Foreground="#8B9AAB" VerticalAlignment="Center" Margin="12,0,0,0"/>
                     <ComboBox Width="180" SelectedItem="{Binding SelectedRecovery}"
-                              ItemsSource="{Binding RecoveryOptions}"/>
+                              ItemsSource="{Binding RecoveryOptions}"
+                              IsEnabled="{Binding HasSelection}"/>
                     <Button Classes="toolbar accent" Content="Apply" Command="{Binding ApplyRecoveryCommand}"/>
                 </StackPanel>
             </Grid>
         </Border>
 
-        <Grid ColumnDefinitions="280,*">
-            <!-- Left: either/or scope -->
+        <Grid ColumnDefinitions="300,*">
+            <!-- Left: mode pinned; only lower content scrolls (fixes clipped header + ugly bar) -->
             <Border Classes="panel" Margin="0,0,12,0">
-                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                    <StackPanel>
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
                         <TextBlock Classes="section" Text="MODE"/>
-                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,12">
+                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,10">
                             <Button Content="Simple" Command="{Binding UseSimpleModeCommand}"
                                     Padding="14,8" CornerRadius="6"
                                     Background="#00C2A8" Foreground="#0B1215"
@@ -164,77 +204,109 @@
                                     Background="#1E2A33" Foreground="#E6EDF3"
                                     IsVisible="{Binding IsSimpleMode}"/>
                         </StackPanel>
-
-                        <Border Classes="help">
+                        <Border Classes="help" Margin="0">
                             <TextBlock Text="{Binding ProfileGuidance}" Foreground="#A8B8C8"
                                        TextWrapping="Wrap" FontSize="12" LineHeight="18"/>
                         </Border>
+                    </StackPanel>
 
-                        <!-- Simple mode controls -->
-                        <StackPanel IsVisible="{Binding ShowSimpleFilter}">
-                            <TextBlock Classes="section" Text="SUBSTRING FILTER"/>
-                            <TextBox Text="{Binding SubstringFilter}" PlaceholderText="e.g. product token" Margin="0,0,0,8"/>
-                            <Button Classes="toolbar accent" Content="Apply filter / refresh"
-                                    Command="{Binding RefreshCommand}"
-                                    HorizontalAlignment="Stretch"/>
-                        </StackPanel>
-
-                        <!-- Profile mode controls -->
-                        <StackPanel IsVisible="{Binding ShowProfilePicker}">
-                            <Border Classes="help" IsVisible="{Binding ShowNoProfilesHelp}">
-                                <StackPanel Spacing="8">
-                                    <TextBlock Text="No profiles detected"
-                                               FontWeight="SemiBold" Foreground="#F0C929"/>
-                                    <TextBlock Text="Run in Simple mode with a substring, or browse to a shareable .wsb.json profile. Roles are defined inside each profile (not fixed to client/server)."
-                                               TextWrapping="Wrap" Foreground="#A8B8C8" FontSize="12"/>
-                                    <Button Classes="toolbar accent" Content="Browse for profile…"
-                                            Command="{Binding BrowseProfileCommand}"
-                                            HorizontalAlignment="Stretch"/>
-                                    <Button Classes="toolbar" Content="Use Simple mode"
-                                            Command="{Binding UseSimpleModeCommand}"
-                                            HorizontalAlignment="Stretch"/>
-                                    <Button Classes="toolbar" Content="Import sample profiles…"
-                                            Command="{Binding LoadSampleProfilesCommand}"
-                                            HorizontalAlignment="Stretch"
-                                            ToolTip.Tip="Copies repo sample .wsb.json files into your user profile folder (for trying Profile mode)."/>
-                                </StackPanel>
-                            </Border>
-
-                            <TextBlock Classes="section" Text="PROFILE"/>
-                            <ComboBox ItemsSource="{Binding AvailableProfiles}"
-                                      SelectedItem="{Binding SelectedProfileId}"
-                                      HorizontalAlignment="Stretch"
-                                      PlaceholderText="Select a profile…"
-                                      Margin="0,0,0,8"/>
-                            <Button Classes="toolbar" Content="Browse / import…"
-                                    Command="{Binding BrowseProfileCommand}"
-                                    HorizontalAlignment="Stretch" Margin="0,0,0,12"/>
-
-                            <StackPanel IsVisible="{Binding ShowRolePicker}">
-                                <TextBlock Classes="section" Text="ROLE (FROM PROFILE)"/>
-                                <ComboBox ItemsSource="{Binding AvailableRoles}"
-                                          SelectedItem="{Binding SelectedRole}"
-                                          HorizontalAlignment="Stretch"
-                                          PlaceholderText="Select a role…"
-                                          Margin="0,0,0,8"/>
-                                <TextBlock Text="Roles describe this machine’s function for the product (e.g. app host, database host, web tier). Each profile defines its own list."
-                                           TextWrapping="Wrap" Foreground="#5C6B7A" FontSize="11" Margin="0,0,0,8"/>
+                    <ScrollViewer Classes="sidebar-scroll" Padding="0,0,2,0">
+                        <StackPanel Margin="0,4,4,0">
+                            <!-- Simple mode controls -->
+                            <StackPanel IsVisible="{Binding ShowSimpleFilter}">
+                                <TextBlock Classes="section" Text="SUBSTRING FILTER"/>
+                                <TextBox Text="{Binding SubstringFilter}" PlaceholderText="e.g. product token" Margin="0,0,0,8">
+                                    <TextBox.KeyBindings>
+                                        <KeyBinding Gesture="Enter" Command="{Binding RefreshCommand}"/>
+                                    </TextBox.KeyBindings>
+                                </TextBox>
+                                <Button Classes="toolbar accent" Content="Apply filter / refresh"
+                                        Command="{Binding RefreshCommand}"
+                                        HorizontalAlignment="Stretch"/>
                             </StackPanel>
 
-                            <Button Classes="toolbar accent" Content="Load / refresh"
-                                    Command="{Binding RefreshCommand}"
-                                    HorizontalAlignment="Stretch" Margin="0,8,0,0"/>
+                            <!-- Profile mode controls -->
+                            <StackPanel IsVisible="{Binding ShowProfilePicker}">
+                                <Border Classes="help" IsVisible="{Binding ShowNoProfilesHelp}">
+                                    <StackPanel Spacing="8">
+                                        <TextBlock Text="No profiles detected"
+                                                   FontWeight="SemiBold" Foreground="#F0C929"/>
+                                        <TextBlock Text="Browse to a .wsb.json, import samples, or open the Profile Builder."
+                                                   TextWrapping="Wrap" Foreground="#A8B8C8" FontSize="12"/>
+                                        <Button Classes="toolbar accent" Content="Browse for profile…"
+                                                Command="{Binding BrowseProfileCommand}"
+                                                HorizontalAlignment="Stretch"/>
+                                        <Button Classes="toolbar" Content="Use Simple mode"
+                                                Command="{Binding UseSimpleModeCommand}"
+                                                HorizontalAlignment="Stretch"/>
+                                        <Button Classes="toolbar" Content="Import sample profiles…"
+                                                Command="{Binding LoadSampleProfilesCommand}"
+                                                HorizontalAlignment="Stretch"
+                                                ToolTip.Tip="Copies repo sample .wsb.json files into your user profile folder."/>
+                                    </StackPanel>
+                                </Border>
 
-                            <TextBlock Classes="section" Text="PREREQUISITES" Margin="0,20,0,8"
-                                       IsVisible="{Binding HasPrerequisites}"/>
-                            <ListBox ItemsSource="{Binding PrerequisiteLines}"
-                                     Background="Transparent" BorderThickness="0"
-                                     Foreground="#C5D0DA" FontSize="12"
-                                     MaxHeight="200"
-                                     IsVisible="{Binding HasPrerequisites}"/>
+                                <TextBlock Classes="section" Text="PROFILE"/>
+                                <ComboBox ItemsSource="{Binding AvailableProfiles}"
+                                          SelectedItem="{Binding SelectedProfileId}"
+                                          HorizontalAlignment="Stretch"
+                                          PlaceholderText="Select a profile…"
+                                          Margin="0,0,0,8"/>
+                                <CheckBox IsChecked="{Binding IsSelectedProfileDefault}"
+                                          IsEnabled="{Binding CanSetDefaultProfile}"
+                                          Content="Default profile (open this on launch)"
+                                          Margin="0,0,0,8"
+                                          Foreground="#C5D0DA"
+                                          ToolTip.Tip="Launch in Profile mode with this profile (and last role/environment) next time."/>
+                                <Button Classes="toolbar" Content="Browse / import…"
+                                        Command="{Binding BrowseProfileCommand}"
+                                        HorizontalAlignment="Stretch" Margin="0,0,0,12"/>
+
+                                <StackPanel IsVisible="{Binding ShowEnvironmentPicker}">
+                                    <TextBlock Classes="section" Text="ENVIRONMENT"/>
+                                    <ComboBox ItemsSource="{Binding AvailableEnvironments}"
+                                              SelectedItem="{Binding SelectedEnvironment}"
+                                              HorizontalAlignment="Stretch"
+                                              PlaceholderText="Production / Acceptance…"
+                                              Margin="0,0,0,8"/>
+                                    <TextBlock Text="Environment sets desired startup/recovery (e.g. Production=Automatic, Acceptance=Manual)."
+                                               TextWrapping="Wrap" Foreground="#5C6B7A" FontSize="11" Margin="0,0,0,8"/>
+                                </StackPanel>
+
+                                <StackPanel IsVisible="{Binding ShowRolePicker}">
+                                    <TextBlock Classes="section" Text="ROLE (FROM PROFILE)"/>
+                                    <ComboBox ItemsSource="{Binding AvailableRoles}"
+                                              SelectedItem="{Binding SelectedRole}"
+                                              HorizontalAlignment="Stretch"
+                                              PlaceholderText="Select a role…"
+                                              Margin="0,0,0,8"/>
+                                    <TextBlock Text="Machine function for this product (app host, database host, web tier, …)."
+                                               TextWrapping="Wrap" Foreground="#5C6B7A" FontSize="11" Margin="0,0,0,8"/>
+                                </StackPanel>
+
+                                <TextBlock Classes="section" Text="PROFILE BUILDER" Margin="0,8,0,8"/>
+                                <Button Classes="toolbar accent" Content="Build profile…"
+                                        Command="{Binding BuildProfileCommand}"
+                                        HorizontalAlignment="Stretch" Margin="0,0,0,8"/>
+                                <Button Classes="toolbar" Content="Edit profile…"
+                                        Command="{Binding EditProfileCommand}"
+                                        HorizontalAlignment="Stretch" Margin="0,0,0,8"/>
+
+                                <Button Classes="toolbar accent" Content="Load / refresh"
+                                        Command="{Binding RefreshCommand}"
+                                        HorizontalAlignment="Stretch" Margin="0,8,0,0"/>
+
+                                <TextBlock Classes="section" Text="PREREQUISITES" Margin="0,20,0,8"
+                                           IsVisible="{Binding HasPrerequisites}"/>
+                                <ListBox ItemsSource="{Binding PrerequisiteLines}"
+                                         Background="Transparent" BorderThickness="0"
+                                         Foreground="#C5D0DA" FontSize="12"
+                                         MaxHeight="180"
+                                         IsVisible="{Binding HasPrerequisites}"/>
+                            </StackPanel>
                         </StackPanel>
-                    </StackPanel>
-                </ScrollViewer>
+                    </ScrollViewer>
+                </DockPanel>
             </Border>
 
             <!-- Center + optional deps panel -->

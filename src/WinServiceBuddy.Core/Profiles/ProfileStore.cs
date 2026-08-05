@@ -43,10 +43,43 @@ public sealed class ProfileStore
         if (profile.SchemaVersion < 1)
             result.Errors.Add("schemaVersion must be >= 1.");
 
+        var serviceNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var svc in profile.Services)
         {
             if (string.IsNullOrWhiteSpace(svc.ServiceName))
+            {
                 result.Errors.Add("A profile service entry is missing serviceName.");
+                continue;
+            }
+
+            if (!serviceNames.Add(svc.ServiceName))
+                result.Errors.Add($"Duplicate serviceName '{svc.ServiceName}'.");
+        }
+
+        var envIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var env in profile.Environments)
+        {
+            if (string.IsNullOrWhiteSpace(env.Id) && string.IsNullOrWhiteSpace(env.Name))
+            {
+                result.Errors.Add("An environment is missing both id and name.");
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(env.Id))
+                env.Id = ProfileEnvironmentResolver.Slugify(env.Name);
+
+            if (string.IsNullOrWhiteSpace(env.Name))
+                env.Name = env.Id;
+
+            if (!envIds.Add(env.Id))
+                result.Errors.Add($"Duplicate environment id '{env.Id}'.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(profile.DefaultEnvironment) && profile.Environments.Count > 0)
+        {
+            var found = ProfileEnvironmentResolver.FindEnvironment(profile, profile.DefaultEnvironment);
+            if (found is null)
+                result.Errors.Add($"defaultEnvironment '{profile.DefaultEnvironment}' was not found in environments.");
         }
 
         foreach (var rule in profile.MatchRules)
@@ -76,6 +109,7 @@ public sealed class ProfileStore
         var json = File.ReadAllText(path);
         var profile = JsonSerializer.Deserialize<ProductProfile>(json, JsonOptions)
                       ?? throw new InvalidDataException($"Could not parse profile: {path}");
+        NormalizeAfterLoad(profile);
         var validation = Validate(profile);
         if (!validation.IsValid)
             throw new InvalidDataException($"Invalid profile '{path}': {string.Join("; ", validation.Errors)}");
@@ -84,6 +118,7 @@ public sealed class ProfileStore
 
     public void Save(ProductProfile profile, string path)
     {
+        NormalizeBeforeSave(profile);
         var validation = Validate(profile);
         if (!validation.IsValid)
             throw new InvalidDataException(string.Join("; ", validation.Errors));
@@ -97,6 +132,13 @@ public sealed class ProfileStore
 
         var json = JsonSerializer.Serialize(profile, JsonOptions);
         File.WriteAllText(path, json);
+    }
+
+    public void SaveToUserStore(ProductProfile profile)
+    {
+        Directory.CreateDirectory(UserProfilesDirectory);
+        var dest = Path.Combine(UserProfilesDirectory, $"{SanitizeFileName(profile.Id)}.wsb.json");
+        Save(profile, dest);
     }
 
     public void Import(string sourcePath, bool machineScope = false)
@@ -136,9 +178,27 @@ public sealed class ProfileStore
             }
         }
 
-        // Direct path
         if (File.Exists(profileId))
             return Load(profileId);
+
+        return null;
+    }
+
+    public string? FindPathById(string profileId)
+    {
+        foreach (var path in EnumerateProfileFiles())
+        {
+            try
+            {
+                var p = Load(path);
+                if (string.Equals(p.Id, profileId, StringComparison.OrdinalIgnoreCase))
+                    return path;
+            }
+            catch
+            {
+                // skip
+            }
+        }
 
         return null;
     }
@@ -191,6 +251,92 @@ public sealed class ProfileStore
         return names;
     }
 
+    /// <summary>Create a starter product profile with Production + Acceptance environments.</summary>
+    public static ProductProfile CreateTemplate(string name, string? id = null)
+    {
+        var profileId = string.IsNullOrWhiteSpace(id)
+            ? ProfileEnvironmentResolver.Slugify(name)
+            : id.Trim();
+
+        return new ProductProfile
+        {
+            SchemaVersion = 2,
+            Id = profileId,
+            Name = name.Trim(),
+            DefaultRoles = ["Application Server"],
+            Roles = ["Application Server", "Client Workstation"],
+            DefaultEnvironment = "Production",
+            Environments =
+            [
+                new ProfileEnvironment
+                {
+                    Id = "production",
+                    Name = "Production",
+                    DefaultStartup = "Automatic",
+                    DefaultRecovery = "restart-3"
+                },
+                new ProfileEnvironment
+                {
+                    Id = "acceptance",
+                    Name = "Acceptance",
+                    DefaultStartup = "Manual",
+                    DefaultRecovery = "none"
+                }
+            ],
+            IncludeScmDependencies = true,
+            Services = [],
+            MatchRules = [],
+            Prerequisites = [],
+            Metadata = new ProfileMetadata { Author = Environment.UserName }
+        };
+    }
+
+    private static void NormalizeAfterLoad(ProductProfile profile)
+    {
+        // v1 profiles: no environments → synthesize a Default so UI has something to bind.
+        if (profile.Environments.Count == 0)
+        {
+            profile.Environments.Add(new ProfileEnvironment
+            {
+                Id = "default",
+                Name = "Default",
+                DefaultStartup = null,
+                DefaultRecovery = null
+            });
+            profile.DefaultEnvironment ??= "Default";
+        }
+
+        foreach (var env in profile.Environments)
+        {
+            if (string.IsNullOrWhiteSpace(env.Id) && !string.IsNullOrWhiteSpace(env.Name))
+                env.Id = ProfileEnvironmentResolver.Slugify(env.Name);
+            if (string.IsNullOrWhiteSpace(env.Name) && !string.IsNullOrWhiteSpace(env.Id))
+                env.Name = env.Id;
+        }
+
+        // Ensure orders exist
+        if (profile.Services.Any(s => s.Order == 0) && profile.Services.Select(s => s.Order).Distinct().Count() == 1)
+            ProfileOrdering.Renumber(profile.Services);
+    }
+
+    private static void NormalizeBeforeSave(ProductProfile profile)
+    {
+        if (profile.SchemaVersion < 2)
+            profile.SchemaVersion = 2;
+
+        foreach (var env in profile.Environments)
+        {
+            if (string.IsNullOrWhiteSpace(env.Id))
+                env.Id = ProfileEnvironmentResolver.Slugify(env.Name);
+        }
+
+        if (string.IsNullOrWhiteSpace(profile.DefaultEnvironment) && profile.Environments.Count > 0)
+            profile.DefaultEnvironment = profile.Environments[0].Name;
+
+        profile.Services = ProfileOrdering.ForStart(profile.Services).ToList();
+        ProfileOrdering.Renumber(profile.Services);
+    }
+
     private IEnumerable<string> EnumerateProfileFiles()
     {
         foreach (var dir in new[] { UserProfilesDirectory, MachineProfilesDirectory })
@@ -206,8 +352,6 @@ public sealed class ProfileStore
 
     private static bool RoleMatches(IReadOnlyList<string> roles, string activeRole)
     {
-        // Empty role list on an entry = applies to every role.
-        // Active role "(all)" = operator is viewing the whole profile without a role filter.
         if (roles.Count == 0)
             return true;
         if (string.Equals(activeRole, "(all)", StringComparison.OrdinalIgnoreCase))

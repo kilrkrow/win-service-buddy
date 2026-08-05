@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
+using System.Text;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using WinServiceBuddy.Core.Models;
@@ -15,20 +17,25 @@ public partial class MainViewModel : ViewModelBase
     private readonly IWindowsServiceManager _services;
     private readonly ProfileStore _profiles;
     private readonly PrerequisiteEvaluator _prereqs;
+    private readonly AppSettingsStore _settingsStore;
     private readonly Dictionary<string, string> _profilePathById = new(StringComparer.OrdinalIgnoreCase);
+    private AppSettings _settings;
+    private bool _suppressDefaultProfileSave;
 
     /// <summary>Index used as the Shift+click range anchor for checkbox multi-select.</summary>
     private int _selectionAnchorIndex = -1;
 
     public MainViewModel()
-        : this(new WindowsServiceManager(), new ProfileStore())
+        : this(new WindowsServiceManager(), new ProfileStore(), new AppSettingsStore())
     {
     }
 
-    public MainViewModel(IWindowsServiceManager services, ProfileStore profiles)
+    public MainViewModel(IWindowsServiceManager services, ProfileStore profiles, AppSettingsStore? settingsStore = null)
     {
         _services = services;
         _profiles = profiles;
+        _settingsStore = settingsStore ?? new AppSettingsStore();
+        _settings = _settingsStore.Load();
         _prereqs = new PrerequisiteEvaluator(services);
         IsElevated = Elevation.IsElevated();
         HostName = Environment.MachineName;
@@ -36,7 +43,9 @@ public partial class MainViewModel : ViewModelBase
         AvailableRoles = new ObservableCollection<string>();
         Services.CollectionChanged += OnServicesCollectionChanged;
         ReloadAvailableProfiles();
+        ApplyLaunchDefaults();
         UpdateProfileGuidance();
+        UpdateDefaultProfileFlag();
         Refresh();
     }
 
@@ -51,6 +60,9 @@ public partial class MainViewModel : ViewModelBase
     public ObservableCollection<DependencyItemViewModel> DependencyItems { get; } = new();
     public ObservableCollection<string> AvailableProfiles { get; }
     public ObservableCollection<string> AvailableRoles { get; }
+    public ObservableCollection<string> AvailableEnvironments { get; } = new();
+
+    private ProductProfile? _activeProfile;
 
     [ObservableProperty]
     public partial bool IsSimpleMode { get; set; } = true;
@@ -63,6 +75,13 @@ public partial class MainViewModel : ViewModelBase
 
     [ObservableProperty]
     public partial string? SelectedRole { get; set; }
+
+    [ObservableProperty]
+    public partial string? SelectedEnvironment { get; set; }
+
+    /// <summary>True when the currently selected profile is the launch default.</summary>
+    [ObservableProperty]
+    public partial bool IsSelectedProfileDefault { get; set; }
 
     [ObservableProperty]
     public partial string StatusText { get; set; } = "";
@@ -84,6 +103,14 @@ public partial class MainViewModel : ViewModelBase
 
     [ObservableProperty]
     public partial bool IsBusy { get; set; }
+
+    /// <summary>0–100 progress for the active bulk operation.</summary>
+    [ObservableProperty]
+    public partial double OperationProgress { get; set; }
+
+    /// <summary>Short label shown beside the progress bar (e.g. Starting 2/5…).</summary>
+    [ObservableProperty]
+    public partial string OperationDetail { get; set; } = "";
 
     [ObservableProperty]
     public partial bool IsDependenciesPanelOpen { get; set; }
@@ -108,7 +135,15 @@ public partial class MainViewModel : ViewModelBase
 
     public bool ShowRolePicker => !IsSimpleMode && AvailableRoles.Count > 0;
 
+    public bool ShowEnvironmentPicker => !IsSimpleMode && AvailableEnvironments.Count > 0;
+
     public bool ShowSimpleFilter => IsSimpleMode;
+
+    public bool CanSetDefaultProfile =>
+        !IsSimpleMode && !string.IsNullOrWhiteSpace(SelectedProfileId);
+
+    /// <summary>Set by the view to open the Profile Builder window.</summary>
+    public Action<ProductProfile?, string?>? OpenProfileBuilder { get; set; }
 
     public bool HasPrerequisites => PrerequisiteLines.Count > 0;
 
@@ -134,6 +169,7 @@ public partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(ShowSimpleFilter));
         OnPropertyChanged(nameof(ShowProfilePicker));
         OnPropertyChanged(nameof(ShowRolePicker));
+        OnPropertyChanged(nameof(ShowEnvironmentPicker));
         OnPropertyChanged(nameof(ShowNoProfilesHelp));
         UpdateProfileGuidance();
         Refresh();
@@ -142,15 +178,55 @@ public partial class MainViewModel : ViewModelBase
     partial void OnSelectedProfileIdChanged(string? value)
     {
         LoadRolesForSelectedProfile();
+        LoadEnvironmentsForSelectedProfile();
+        UpdateDefaultProfileFlag();
         OnPropertyChanged(nameof(ShowNoProfilesHelp));
         OnPropertyChanged(nameof(ShowRolePicker));
+        OnPropertyChanged(nameof(ShowEnvironmentPicker));
+        OnPropertyChanged(nameof(CanSetDefaultProfile));
         UpdateProfileGuidance();
         if (!IsSimpleMode)
             Refresh();
     }
 
+    partial void OnIsSelectedProfileDefaultChanged(bool value)
+    {
+        if (_suppressDefaultProfileSave || string.IsNullOrWhiteSpace(SelectedProfileId))
+            return;
+
+        if (value)
+        {
+            _settings.DefaultProfileId = SelectedProfileId;
+            _settings.LaunchInProfileMode = true;
+            _settings.DefaultEnvironment = SelectedEnvironment;
+            _settings.DefaultRole = SelectedRole;
+            _settingsStore.Save(_settings);
+            StatusText = $"Default profile set to “{SelectedProfileId}” — app will open in Profile mode next launch.";
+            return;
+        }
+
+        // Only clear stored default when unchecking the profile that *is* the default
+        if (string.Equals(_settings.DefaultProfileId, SelectedProfileId, StringComparison.OrdinalIgnoreCase))
+        {
+            _settings.DefaultProfileId = null;
+            _settings.LaunchInProfileMode = false;
+            _settings.DefaultEnvironment = null;
+            _settings.DefaultRole = null;
+            _settingsStore.Save(_settings);
+            StatusText = "Default profile cleared — app will open in Simple mode next launch.";
+        }
+    }
+
     partial void OnSelectedRoleChanged(string? value)
     {
+        PersistDefaultContextIfNeeded();
+        if (!IsSimpleMode)
+            Refresh();
+    }
+
+    partial void OnSelectedEnvironmentChanged(string? value)
+    {
+        PersistDefaultContextIfNeeded();
         if (!IsSimpleMode)
             Refresh();
     }
@@ -167,11 +243,14 @@ public partial class MainViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void Refresh()
+    private void Refresh() => RefreshCore(manageBusy: !IsBusy);
+
+    private void RefreshCore(bool manageBusy)
     {
         try
         {
-            IsBusy = true;
+            if (manageBusy)
+                IsBusy = true;
             List<ServiceInfo> list;
             PrerequisiteLines.Clear();
 
@@ -222,6 +301,14 @@ public partial class MainViewModel : ViewModelBase
                 }
 
                 list = ServiceFilter.ByNames(live, names).ToList();
+                _activeProfile = profile;
+
+                // Honor profile start/stop order in the grid
+                var ordered = ProfileOrdering.OrderServiceNames(
+                    list.Select(s => s.ServiceName), profile, forStop: false);
+                list = ordered
+                    .Select(n => list.First(s => string.Equals(s.ServiceName, n, StringComparison.OrdinalIgnoreCase)))
+                    .ToList();
 
                 foreach (var r in _prereqs.Evaluate(profile, role))
                 {
@@ -233,6 +320,7 @@ public partial class MainViewModel : ViewModelBase
             }
             else
             {
+                _activeProfile = null;
                 OnPropertyChanged(nameof(HasPrerequisites));
                 list = string.IsNullOrWhiteSpace(SubstringFilter)
                     ? _services.GetServices().ToList()
@@ -280,18 +368,22 @@ public partial class MainViewModel : ViewModelBase
         }
         finally
         {
-            IsBusy = false;
+            if (manageBusy)
+                IsBusy = false;
         }
     }
 
     [RelayCommand(CanExecute = nameof(CanOperateOnSelection))]
-    private Task StartSelectedAsync() => RunOnSelectedAsync(names => _services.StartMany(names));
+    private Task StartSelectedAsync() =>
+        RunOnSelectedAsync("Starting", n => _services.Start(n), forStop: false, pendingStatus: "Starting…");
 
     [RelayCommand(CanExecute = nameof(CanOperateOnSelection))]
-    private Task StopSelectedAsync() => RunOnSelectedAsync(names => _services.StopMany(names));
+    private Task StopSelectedAsync() =>
+        RunOnSelectedAsync("Stopping", n => _services.Stop(n), forStop: true, pendingStatus: "Stopping…");
 
     [RelayCommand(CanExecute = nameof(CanOperateOnSelection))]
-    private Task RestartSelectedAsync() => RunOnSelectedAsync(names => _services.RestartMany(names));
+    private Task RestartSelectedAsync() =>
+        RunOnSelectedAsync("Restarting", n => _services.Restart(n), forStop: false, pendingStatus: "Restarting…");
 
     [RelayCommand(CanExecute = nameof(CanOperateOnSelection))]
     private Task ApplyStartupAsync()
@@ -305,7 +397,11 @@ public partial class MainViewModel : ViewModelBase
             return Task.CompletedTask;
         }
 
-        return RunOnSelectedAsync(names => _services.SetStartupTypeMany(names, startup));
+        return RunOnSelectedAsync(
+            $"Setting startup → {startup}",
+            n => _services.SetStartupType(n, startup),
+            forStop: false,
+            pendingStatus: "Updating…");
     }
 
     [RelayCommand(CanExecute = nameof(CanOperateOnSelection))]
@@ -320,7 +416,120 @@ public partial class MainViewModel : ViewModelBase
             return Task.CompletedTask;
         }
 
-        return RunOnSelectedAsync(names => _services.SetRecoveryMany(names, preset));
+        return RunOnSelectedAsync(
+            $"Setting recovery → {preset}",
+            n => _services.SetRecovery(n, preset),
+            forStop: false,
+            pendingStatus: "Updating…");
+    }
+
+    [RelayCommand]
+    private void BuildProfile()
+    {
+        OpenProfileBuilder?.Invoke(null, null);
+    }
+
+    [RelayCommand]
+    private void EditProfile()
+    {
+        if (string.IsNullOrWhiteSpace(SelectedProfileId))
+        {
+            OpenProfileBuilder?.Invoke(null, null);
+            return;
+        }
+
+        var profile = LoadProfile(SelectedProfileId);
+        var path = _profiles.FindPathById(profile?.Id ?? SelectedProfileId);
+        OpenProfileBuilder?.Invoke(profile, path);
+    }
+
+    [RelayCommand]
+    private void SetAsDefaultProfile()
+    {
+        if (string.IsNullOrWhiteSpace(SelectedProfileId))
+        {
+            StatusText = "Select a profile first.";
+            return;
+        }
+
+        IsSelectedProfileDefault = true;
+    }
+
+    [RelayCommand]
+    private void ClearDefaultProfile()
+    {
+        IsSelectedProfileDefault = false;
+    }
+
+    private void ApplyLaunchDefaults()
+    {
+        if (!_settings.LaunchInProfileMode || string.IsNullOrWhiteSpace(_settings.DefaultProfileId))
+            return;
+
+        // Ensure default is still available
+        if (!AvailableProfiles.Any(p =>
+                string.Equals(p, _settings.DefaultProfileId, StringComparison.OrdinalIgnoreCase)))
+        {
+            // Try loading by id from store even if list key differs
+            var found = _profiles.FindById(_settings.DefaultProfileId);
+            if (found is null)
+                return;
+            if (!AvailableProfiles.Contains(found.Id))
+                AvailableProfiles.Add(found.Id);
+            _settings.DefaultProfileId = found.Id;
+        }
+
+        IsSimpleMode = false;
+        SelectedProfileId = AvailableProfiles.FirstOrDefault(p =>
+            string.Equals(p, _settings.DefaultProfileId, StringComparison.OrdinalIgnoreCase))
+            ?? _settings.DefaultProfileId;
+
+        // SelectedProfileId change loads roles/envs; re-apply stored preferences
+        if (!string.IsNullOrWhiteSpace(_settings.DefaultRole) &&
+            AvailableRoles.Any(r => string.Equals(r, _settings.DefaultRole, StringComparison.OrdinalIgnoreCase)))
+        {
+            SelectedRole = _settings.DefaultRole;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_settings.DefaultEnvironment) &&
+            AvailableEnvironments.Any(e =>
+                string.Equals(e, _settings.DefaultEnvironment, StringComparison.OrdinalIgnoreCase)))
+        {
+            SelectedEnvironment = _settings.DefaultEnvironment;
+        }
+
+        UpdateDefaultProfileFlag();
+    }
+
+    /// <summary>Persist current role/env when they change while this profile is the default.</summary>
+    private void PersistDefaultContextIfNeeded()
+    {
+        if (string.IsNullOrWhiteSpace(SelectedProfileId))
+            return;
+        if (!string.Equals(_settings.DefaultProfileId, SelectedProfileId, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        _settings.DefaultRole = SelectedRole;
+        _settings.DefaultEnvironment = SelectedEnvironment;
+        _settingsStore.Save(_settings);
+    }
+
+    private void UpdateDefaultProfileFlag()
+    {
+        var isDefault = !string.IsNullOrWhiteSpace(SelectedProfileId) &&
+                        string.Equals(_settings.DefaultProfileId, SelectedProfileId, StringComparison.OrdinalIgnoreCase);
+        if (IsSelectedProfileDefault == isDefault)
+            return;
+
+        _suppressDefaultProfileSave = true;
+        try
+        {
+            IsSelectedProfileDefault = isDefault;
+        }
+        finally
+        {
+            _suppressDefaultProfileSave = false;
+        }
     }
 
     [RelayCommand(CanExecute = nameof(CanSelectAll))]
@@ -370,11 +579,13 @@ public partial class MainViewModel : ViewModelBase
         ScrollServiceIntoView?.Invoke(row);
     }
 
-    private bool CanOperateOnSelection() => HasSelection;
+    private bool CanOperateOnSelection() => HasSelection && !IsBusy;
 
-    private bool CanSelectAll() => HasServices && SelectedCount < Services.Count;
+    private bool CanSelectAll() => HasServices && SelectedCount < Services.Count && !IsBusy;
 
-    private bool CanSelectNone() => HasSelection;
+    private bool CanSelectNone() => HasSelection && !IsBusy;
+
+    partial void OnIsBusyChanged(bool value) => NotifySelectionChanged();
 
     [RelayCommand]
     private void RelaunchElevated()
@@ -636,6 +847,53 @@ public partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(ShowRolePicker));
     }
 
+    private void LoadEnvironmentsForSelectedProfile()
+    {
+        AvailableEnvironments.Clear();
+        if (string.IsNullOrWhiteSpace(SelectedProfileId))
+        {
+            SelectedEnvironment = null;
+            OnPropertyChanged(nameof(ShowEnvironmentPicker));
+            return;
+        }
+
+        var profile = LoadProfile(SelectedProfileId);
+        if (profile is null)
+        {
+            SelectedEnvironment = null;
+            OnPropertyChanged(nameof(ShowEnvironmentPicker));
+            return;
+        }
+
+        foreach (var env in profile.Environments)
+            AvailableEnvironments.Add(env.Name);
+
+        if (AvailableEnvironments.Count == 0)
+        {
+            SelectedEnvironment = null;
+        }
+        else
+        {
+            var preferred = profile.DefaultEnvironment;
+            SelectedEnvironment = AvailableEnvironments.FirstOrDefault(e =>
+                                      string.Equals(e, preferred, StringComparison.OrdinalIgnoreCase))
+                                  ?? AvailableEnvironments[0];
+        }
+
+        OnPropertyChanged(nameof(ShowEnvironmentPicker));
+    }
+
+    public void NotifyProfilesChangedFromBuilder()
+    {
+        ReloadAvailableProfiles();
+        if (!string.IsNullOrWhiteSpace(SelectedProfileId))
+        {
+            LoadRolesForSelectedProfile();
+            LoadEnvironmentsForSelectedProfile();
+            Refresh();
+        }
+    }
+
     private void UpdateProfileGuidance()
     {
         if (IsSimpleMode)
@@ -743,7 +1001,11 @@ public partial class MainViewModel : ViewModelBase
         return map;
     }
 
-    private async Task RunOnSelectedAsync(Func<IEnumerable<string>, BulkOperationResult> action)
+    private async Task RunOnSelectedAsync(
+        string actionVerb,
+        Func<string, OperationResult> singleOp,
+        bool forStop,
+        string pendingStatus)
     {
         if (!EnsureElevated())
             return;
@@ -755,21 +1017,127 @@ public partial class MainViewModel : ViewModelBase
             return;
         }
 
+        if (_activeProfile is not null)
+            names = ProfileOrdering.OrderServiceNames(names, _activeProfile, forStop).ToList();
+
+        var total = names.Count;
+        var ok = 0;
+        var fail = 0;
+        var log = new StringBuilder();
+
         try
         {
             IsBusy = true;
-            var result = await Task.Run(() => action(names));
-            StatusText = $"{result.Succeeded} succeeded, {result.Failed} failed.";
-            Refresh();
+            OperationProgress = 0;
+            OperationDetail = $"{actionVerb} 0/{total}…";
+            StatusText = $"{actionVerb} {total} service(s)…";
+
+            for (var i = 0; i < total; i++)
+            {
+                var name = names[i];
+                var display = Services.FirstOrDefault(s =>
+                    string.Equals(s.ServiceName, name, StringComparison.OrdinalIgnoreCase))?.Title ?? name;
+
+                await UiAsync(() =>
+                {
+                    OperationDetail = $"{actionVerb} {i + 1}/{total}: {display}";
+                    StatusText = OperationDetail;
+                    var row = Services.FirstOrDefault(s =>
+                        string.Equals(s.ServiceName, name, StringComparison.OrdinalIgnoreCase));
+                    if (row is not null)
+                        row.Status = pendingStatus;
+                });
+
+                OperationResult result;
+                try
+                {
+                    result = await Task.Run(() => singleOp(name));
+                }
+                catch (Exception ex)
+                {
+                    result = OperationResult.Fail(name, ex.Message);
+                }
+
+                if (result.Success)
+                    ok++;
+                else
+                    fail++;
+
+                log.AppendLine(result.Success
+                    ? $"OK  {display}: {result.Message}"
+                    : $"FAIL {display}: {result.Message}");
+
+                await UiAsync(() =>
+                {
+                    OperationProgress = (i + 1) * 100.0 / total;
+                    var row = Services.FirstOrDefault(s =>
+                        string.Equals(s.ServiceName, name, StringComparison.OrdinalIgnoreCase));
+                    if (row is null)
+                        return;
+
+                    if (result.Success)
+                    {
+                        // Best-effort live status without full refresh mid-loop
+                        if (pendingStatus.StartsWith("Start", StringComparison.OrdinalIgnoreCase))
+                            row.Status = "Running";
+                        else if (pendingStatus.StartsWith("Stop", StringComparison.OrdinalIgnoreCase))
+                            row.Status = "Stopped";
+                        else
+                            row.Status = "Updated";
+                    }
+                    else
+                    {
+                        row.Status = "Error";
+                    }
+                });
+            }
+
+            OperationDetail = fail == 0
+                ? $"Done — {ok}/{total} succeeded"
+                : $"Done — {ok} succeeded, {fail} failed (of {total})";
+            StatusText = OperationDetail + (fail > 0 ? "  ·  see last failure in status" : "");
+            if (fail > 0)
+            {
+                var lastFail = log.ToString()
+                    .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                    .LastOrDefault(l => l.StartsWith("FAIL", StringComparison.Ordinal));
+                if (lastFail is not null)
+                    StatusText = $"{OperationDetail}  ·  {lastFail.Trim()}";
+            }
+
+            var summary = fail == 0
+                ? $"Done — {ok}/{total} succeeded"
+                : $"Done — {ok} succeeded, {fail} failed (of {total})";
+            var failLine = log.ToString()
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .LastOrDefault(l => l.StartsWith("FAIL", StringComparison.Ordinal));
+
+            // Full refresh so startup/recovery columns and true SCM state are accurate
+            RefreshCore(manageBusy: false);
+            StatusText = failLine is null ? summary : $"{summary}  ·  {failLine}";
+            OperationDetail = StatusText;
+            OperationProgress = 100;
         }
         catch (Exception ex)
         {
-            StatusText = ex.Message;
+            StatusText = $"{actionVerb} aborted: {ex.Message}";
+            OperationDetail = StatusText;
         }
         finally
         {
             IsBusy = false;
         }
+    }
+
+    private static Task UiAsync(Action action)
+    {
+        if (Dispatcher.UIThread.CheckAccess())
+        {
+            action();
+            return Task.CompletedTask;
+        }
+
+        return Dispatcher.UIThread.InvokeAsync(action).GetTask();
     }
 
     private void ClearServices()

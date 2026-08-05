@@ -18,16 +18,21 @@ var roleOption = new Option<string?>("--role", "-r")
 {
     Description = "Profile-defined role name (from the profile’s roles list; not a fixed client/server enum)"
 };
+var environmentOption = new Option<string?>("--environment", "-e")
+{
+    Description = "Profile environment name/id (e.g. Production, Acceptance)"
+};
 
 // list
 var listCmd = new Command("list", "List services (simple substring or profile mode)");
 listCmd.Options.Add(substringOption);
 listCmd.Options.Add(profileOption);
 listCmd.Options.Add(roleOption);
+listCmd.Options.Add(environmentOption);
 listCmd.Options.Add(jsonOption);
 listCmd.SetAction(parse =>
 {
-    var services = ResolveServices(manager, profiles, parse.GetValue(substringOption), parse.GetValue(profileOption), parse.GetValue(roleOption));
+    var services = ResolveServices(manager, profiles, parse.GetValue(substringOption), parse.GetValue(profileOption), parse.GetValue(roleOption), parse.GetValue(environmentOption), forStop: false);
     PrintServices(services, parse.GetValue(jsonOption));
     return 0;
 });
@@ -37,18 +42,19 @@ var statusCmd = new Command("status", "Show status for matching services");
 statusCmd.Options.Add(substringOption);
 statusCmd.Options.Add(profileOption);
 statusCmd.Options.Add(roleOption);
+statusCmd.Options.Add(environmentOption);
 statusCmd.Options.Add(jsonOption);
 statusCmd.SetAction(parse =>
 {
-    var services = ResolveServices(manager, profiles, parse.GetValue(substringOption), parse.GetValue(profileOption), parse.GetValue(roleOption));
+    var services = ResolveServices(manager, profiles, parse.GetValue(substringOption), parse.GetValue(profileOption), parse.GetValue(roleOption), parse.GetValue(environmentOption), forStop: false);
     PrintServices(services, parse.GetValue(jsonOption));
     return 0;
 });
 
 // start / stop / restart
-root.Add(BuildLifecycleCommand("start", "Start services", (m, names) => m.StartMany(names)));
-root.Add(BuildLifecycleCommand("stop", "Stop services", (m, names) => m.StopMany(names)));
-root.Add(BuildLifecycleCommand("restart", "Restart services", (m, names) => m.RestartMany(names)));
+root.Add(BuildLifecycleCommand("start", "Start services", (m, names) => m.StartMany(names), forStop: false));
+root.Add(BuildLifecycleCommand("stop", "Stop services", (m, names) => m.StopMany(names), forStop: true));
+root.Add(BuildLifecycleCommand("restart", "Restart services", (m, names) => m.RestartMany(names), forStop: false));
 
 // set-startup
 var setStartupCmd = new Command("set-startup", "Bulk-set service startup type");
@@ -57,6 +63,7 @@ setStartupCmd.Arguments.Add(startupTypeArg);
 setStartupCmd.Options.Add(substringOption);
 setStartupCmd.Options.Add(profileOption);
 setStartupCmd.Options.Add(roleOption);
+setStartupCmd.Options.Add(environmentOption);
 setStartupCmd.Options.Add(jsonOption);
 setStartupCmd.SetAction(parse =>
 {
@@ -72,7 +79,7 @@ setStartupCmd.SetAction(parse =>
         return 2;
     }
 
-    var services = ResolveServices(manager, profiles, parse.GetValue(substringOption), parse.GetValue(profileOption), parse.GetValue(roleOption));
+    var services = ResolveServices(manager, profiles, parse.GetValue(substringOption), parse.GetValue(profileOption), parse.GetValue(roleOption), parse.GetValue(environmentOption), forStop: false);
     var result = manager.SetStartupTypeMany(services.Select(s => s.ServiceName), startup);
     PrintBulk(result, parse.GetValue(jsonOption));
     return result.AllSucceeded ? 0 : 1;
@@ -85,6 +92,7 @@ setRecoveryCmd.Arguments.Add(recoveryArg);
 setRecoveryCmd.Options.Add(substringOption);
 setRecoveryCmd.Options.Add(profileOption);
 setRecoveryCmd.Options.Add(roleOption);
+setRecoveryCmd.Options.Add(environmentOption);
 setRecoveryCmd.Options.Add(jsonOption);
 setRecoveryCmd.SetAction(parse =>
 {
@@ -100,7 +108,7 @@ setRecoveryCmd.SetAction(parse =>
         return 2;
     }
 
-    var services = ResolveServices(manager, profiles, parse.GetValue(substringOption), parse.GetValue(profileOption), parse.GetValue(roleOption));
+    var services = ResolveServices(manager, profiles, parse.GetValue(substringOption), parse.GetValue(profileOption), parse.GetValue(roleOption), parse.GetValue(environmentOption), forStop: false);
     var result = manager.SetRecoveryMany(services.Select(s => s.ServiceName), preset);
     PrintBulk(result, parse.GetValue(jsonOption));
     return result.AllSucceeded ? 0 : 1;
@@ -306,12 +314,13 @@ root.Subcommands.Add(guiCmd);
 
 return root.Parse(args).Invoke();
 
-Command BuildLifecycleCommand(string name, string description, Func<IWindowsServiceManager, IEnumerable<string>, BulkOperationResult> action)
+Command BuildLifecycleCommand(string name, string description, Func<IWindowsServiceManager, IEnumerable<string>, BulkOperationResult> action, bool forStop)
 {
     var cmd = new Command(name, description);
     cmd.Options.Add(substringOption);
     cmd.Options.Add(profileOption);
     cmd.Options.Add(roleOption);
+    cmd.Options.Add(environmentOption);
     cmd.Options.Add(jsonOption);
     cmd.SetAction(parse =>
     {
@@ -321,7 +330,7 @@ Command BuildLifecycleCommand(string name, string description, Func<IWindowsServ
             return 3;
         }
 
-        var services = ResolveServices(manager, profiles, parse.GetValue(substringOption), parse.GetValue(profileOption), parse.GetValue(roleOption));
+        var services = ResolveServices(manager, profiles, parse.GetValue(substringOption), parse.GetValue(profileOption), parse.GetValue(roleOption), parse.GetValue(environmentOption), forStop);
         if (services.Count == 0)
         {
             Console.Error.WriteLine("No services matched.");
@@ -340,7 +349,9 @@ static List<ServiceInfo> ResolveServices(
     ProfileStore store,
     string? substring,
     string? profileId,
-    string? role)
+    string? role,
+    string? environment,
+    bool forStop)
 {
     if (!string.IsNullOrWhiteSpace(profileId))
     {
@@ -363,7 +374,9 @@ static List<ServiceInfo> ResolveServices(
             names = expanded.ToList();
         }
 
-        return ServiceFilter.ByNames(live, names).ToList();
+        names = ProfileOrdering.OrderServiceNames(names, profile, forStop).ToList();
+        var byName = ServiceFilter.ByNames(live, names).ToDictionary(s => s.ServiceName, StringComparer.OrdinalIgnoreCase);
+        return names.Where(byName.ContainsKey).Select(n => byName[n]).ToList();
     }
 
     if (!string.IsNullOrWhiteSpace(substring))
