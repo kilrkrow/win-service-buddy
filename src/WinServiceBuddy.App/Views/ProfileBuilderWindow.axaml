@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:WinServiceBuddy.App.ViewModels"
         x:Class="WinServiceBuddy.App.Views.ProfileBuilderWindow"
+        x:Name="Root"
         x:DataType="vm:ProfileBuilderViewModel"
         Width="1200" Height="780"
         MinWidth="960" MinHeight="600"
@@ -35,6 +36,13 @@
             <Setter Property="BorderBrush" Value="#243040"/>
             <Setter Property="BorderThickness" Value="1"/>
         </Style>
+        <Style Selector="DataGrid DataGridCell /template/ Grid#FocusVisual">
+            <Setter Property="IsVisible" Value="False"/>
+        </Style>
+        <Style Selector="DataGrid DataGridCell /template/ Rectangle#CurrencyVisual">
+            <Setter Property="IsVisible" Value="False"/>
+            <Setter Property="Opacity" Value="0"/>
+        </Style>
     </Window.Styles>
 
     <DockPanel Margin="12">
@@ -52,9 +60,8 @@
             </Grid>
         </Border>
 
-        <!-- Header: product + environments -->
         <Border DockPanel.Dock="Top" Classes="panel" Margin="0,0,0,12">
-            <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto">
+            <Grid ColumnDefinitions="*,*" RowDefinitions="Auto">
                 <StackPanel Margin="0,0,16,0">
                     <TextBlock Classes="section" Text="PRODUCT"/>
                     <Grid ColumnDefinitions="80,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="6" ColumnSpacing="8">
@@ -85,7 +92,7 @@
                         <Button Classes="toolbar accent" Content="Apply to all services"
                                 Command="{Binding ApplyEnvironmentDefaultsToAllCommand}"/>
                     </StackPanel>
-                    <TextBlock Text="Environments share the same service list &amp; start order; each sets desired startup/recovery (e.g. Production=Automatic+restart-3, Acceptance=Manual+none)."
+                    <TextBlock Text="Same service list &amp; start order per product; each environment sets desired startup/recovery (Production vs Acceptance)."
                                Foreground="#5C6B7A" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0"/>
                 </StackPanel>
             </Grid>
@@ -102,19 +109,34 @@
                             <Button Grid.Column="1" Classes="toolbar accent" Content="Search"
                                     Command="{Binding DiscoverCommand}"/>
                         </Grid>
-                        <Button Classes="toolbar" Content="Add selected →" Margin="0,8,0,0"
-                                Command="{Binding AddSelectedDiscoveriesCommand}"
-                                HorizontalAlignment="Left"/>
+                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+                            <Button Classes="toolbar accent" Content="Add selected →"
+                                    Command="{Binding AddSelectedDiscoveriesCommand}"/>
+                            <Button Classes="toolbar" Content="Add all filtered"
+                                    Command="{Binding AddAllFilteredCommand}"
+                                    ToolTip.Tip="Add every row in the current search results"/>
+                        </StackPanel>
                     </StackPanel>
-                    <DataGrid ItemsSource="{Binding DiscoverResults}"
+                    <DataGrid x:Name="DiscoverGrid"
+                              ItemsSource="{Binding DiscoverResults}"
                               AutoGenerateColumns="False"
                               CanUserResizeColumns="True"
                               Background="Transparent"
                               Foreground="#E6EDF3"
                               BorderThickness="0"
-                              GridLinesVisibility="Horizontal">
+                              GridLinesVisibility="Horizontal"
+                              SelectionMode="Single">
                         <DataGrid.Columns>
-                            <DataGridCheckBoxColumn Header="" Binding="{Binding IsSelected, Mode=TwoWay}" Width="40"/>
+                            <DataGridTemplateColumn Header="" Width="44">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate x:DataType="vm:DiscoverServiceRowViewModel">
+                                        <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                  HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center"
+                                                  ToolTip.Tip="Click · Shift+click range"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
                             <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="90" IsReadOnly="True"/>
                             <DataGridTextColumn Header="Display Name" Binding="{Binding Title}" Width="*" IsReadOnly="True"/>
                             <DataGridTextColumn Header="Service" Binding="{Binding ServiceName}" Width="*" IsReadOnly="True"/>
@@ -123,7 +145,7 @@
                 </DockPanel>
             </Border>
 
-            <!-- Profile services order -->
+            <!-- Profile services -->
             <Border Grid.Column="1" Classes="panel">
                 <DockPanel>
                     <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
@@ -135,24 +157,53 @@
                             <Button Classes="toolbar" Content="Clear overrides" Command="{Binding ClearServiceOverridesCommand}"
                                     ToolTip.Tip="Selected services inherit environment defaults"/>
                         </StackPanel>
-                        <TextBlock Text="Start order = top→bottom. Stop = reverse. Override columns apply only to the selected environment (blank = inherit env default)."
+                        <TextBlock Text="Start = top→bottom. Stop = reverse. Override combos: blank = inherit environment default."
                                    Foreground="#5C6B7A" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0"/>
                     </StackPanel>
-                    <DataGrid ItemsSource="{Binding ProfileServices}"
+                    <DataGrid x:Name="ProfileServicesGrid"
+                              ItemsSource="{Binding ProfileServices}"
                               AutoGenerateColumns="False"
                               CanUserResizeColumns="True"
                               Background="Transparent"
                               Foreground="#E6EDF3"
                               BorderThickness="0"
-                              GridLinesVisibility="Horizontal">
+                              GridLinesVisibility="Horizontal"
+                              SelectionMode="Single">
                         <DataGrid.Columns>
-                            <DataGridCheckBoxColumn Header="" Binding="{Binding IsSelected, Mode=TwoWay}" Width="36"/>
+                            <DataGridTemplateColumn Header="" Width="44">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate x:DataType="vm:BuilderServiceRowViewModel">
+                                        <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                  HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center"
+                                                  ToolTip.Tip="Click · Shift+click range"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
                             <DataGridTextColumn Header="#" Binding="{Binding Order}" Width="48" IsReadOnly="True"/>
                             <DataGridTextColumn Header="Display Name" Binding="{Binding DisplayName}" Width="2*"/>
                             <DataGridTextColumn Header="Service" Binding="{Binding ServiceName}" Width="*" IsReadOnly="True"/>
                             <DataGridTextColumn Header="Roles" Binding="{Binding RolesText}" Width="*"/>
-                            <DataGridTextColumn Header="Override startup" Binding="{Binding OverrideStartup}" Width="110"/>
-                            <DataGridTextColumn Header="Override recovery" Binding="{Binding OverrideRecovery}" Width="110"/>
+                            <DataGridTemplateColumn Header="Override startup" Width="140">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate x:DataType="vm:BuilderServiceRowViewModel">
+                                        <ComboBox ItemsSource="{Binding #Root.((vm:ProfileBuilderViewModel)DataContext).StartupOptions}"
+                                                  SelectedItem="{Binding OverrideStartup}"
+                                                  HorizontalAlignment="Stretch"
+                                                  MinWidth="120"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="Override recovery" Width="120">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate x:DataType="vm:BuilderServiceRowViewModel">
+                                        <ComboBox ItemsSource="{Binding #Root.((vm:ProfileBuilderViewModel)DataContext).RecoveryOptions}"
+                                                  SelectedItem="{Binding OverrideRecovery}"
+                                                  HorizontalAlignment="Stretch"
+                                                  MinWidth="100"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
                         </DataGrid.Columns>
                     </DataGrid>
                 </DockPanel>

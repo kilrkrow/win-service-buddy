@@ -122,8 +122,26 @@ public partial class ProfileBuilderViewModel : ViewModelBase
             return;
         }
 
+        AddDiscoveries(selected);
+    }
+
+    [RelayCommand]
+    private void AddAllFiltered()
+    {
+        if (DiscoverResults.Count == 0)
+        {
+            StatusText = "Search first — no filtered results to add.";
+            return;
+        }
+
+        AddDiscoveries(DiscoverResults.ToList());
+    }
+
+    private void AddDiscoveries(IReadOnlyList<DiscoverServiceRowViewModel> toAdd)
+    {
         var order = ProfileServices.Count == 0 ? 10 : ProfileServices.Max(s => s.Order) + 10;
-        foreach (var d in selected)
+        var added = 0;
+        foreach (var d in toAdd)
         {
             if (ProfileServices.Any(p => string.Equals(p.ServiceName, d.ServiceName, StringComparison.OrdinalIgnoreCase)))
                 continue;
@@ -139,14 +157,59 @@ public partial class ProfileBuilderViewModel : ViewModelBase
             var row = new BuilderServiceRowViewModel(entry);
             row.LoadOverridesForEnvironment(CurrentEnvironmentId());
             ProfileServices.Add(row);
+            DiscoverResults.Remove(d);
+            added++;
         }
 
-        foreach (var d in selected)
-            DiscoverResults.Remove(d);
-
         RenumberOrders();
-        StatusText = $"Added services. Profile now has {ProfileServices.Count}.";
+        StatusText = $"Added {added} service(s). Profile now has {ProfileServices.Count}.";
     }
+
+    /// <summary>Single-click / Shift+click checkbox selection for builder grids.</summary>
+    public void ApplyCheckboxInteraction(object rowVm, bool shift, bool isDiscoverGrid)
+    {
+        if (isDiscoverGrid && rowVm is DiscoverServiceRowViewModel d)
+        {
+            var list = DiscoverResults;
+            var index = list.IndexOf(d);
+            if (index < 0) return;
+            if (shift && _discoverAnchor >= 0 && _discoverAnchor < list.Count)
+            {
+                var from = Math.Min(_discoverAnchor, index);
+                var to = Math.Max(_discoverAnchor, index);
+                for (var i = from; i <= to; i++)
+                    list[i].IsSelected = true;
+            }
+            else
+            {
+                d.IsSelected = !d.IsSelected;
+                _discoverAnchor = index;
+            }
+            return;
+        }
+
+        if (!isDiscoverGrid && rowVm is BuilderServiceRowViewModel b)
+        {
+            var list = ProfileServices;
+            var index = list.IndexOf(b);
+            if (index < 0) return;
+            if (shift && _profileAnchor >= 0 && _profileAnchor < list.Count)
+            {
+                var from = Math.Min(_profileAnchor, index);
+                var to = Math.Max(_profileAnchor, index);
+                for (var i = from; i <= to; i++)
+                    list[i].IsSelected = true;
+            }
+            else
+            {
+                b.IsSelected = !b.IsSelected;
+                _profileAnchor = index;
+            }
+        }
+    }
+
+    private int _discoverAnchor = -1;
+    private int _profileAnchor = -1;
 
     [RelayCommand]
     private void RemoveSelectedProfileServices()

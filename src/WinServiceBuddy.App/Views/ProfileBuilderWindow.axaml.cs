@@ -1,5 +1,9 @@
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Avalonia.VisualTree;
 using WinServiceBuddy.App.ViewModels;
 
 namespace WinServiceBuddy.App.Views;
@@ -18,6 +22,43 @@ public partial class ProfileBuilderWindow : Window
         viewModel.PickOpenProfileAsync = PickOpenAsync;
         viewModel.PickSaveProfileAsync = PickSaveAsync;
         viewModel.RequestClose = () => Close();
+
+        DiscoverGrid.AddHandler(InputElement.PointerPressedEvent, OnDiscoverPointerPressed, RoutingStrategies.Tunnel);
+        ProfileServicesGrid.AddHandler(InputElement.PointerPressedEvent, OnProfilePointerPressed, RoutingStrategies.Tunnel);
+    }
+
+    private void OnDiscoverPointerPressed(object? sender, PointerPressedEventArgs e) =>
+        HandleGridCheckboxClick(e, isDiscover: true);
+
+    private void OnProfilePointerPressed(object? sender, PointerPressedEventArgs e) =>
+        HandleGridCheckboxClick(e, isDiscover: false);
+
+    private void HandleGridCheckboxClick(PointerPressedEventArgs e, bool isDiscover)
+    {
+        if (DataContext is not ProfileBuilderViewModel vm)
+            return;
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+            return;
+
+        var source = e.Source as Visual;
+        if (source is null)
+            return;
+
+        var checkBox = source as CheckBox ?? source.FindAncestorOfType<CheckBox>();
+        if (checkBox is null)
+            return;
+
+        // Don't steal ComboBox clicks in the profile grid
+        if (source.FindAncestorOfType<ComboBox>() is not null)
+            return;
+
+        object? rowVm = checkBox.DataContext;
+        if (rowVm is null)
+            return;
+
+        e.Handled = true;
+        var shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+        vm.ApplyCheckboxInteraction(rowVm, shift, isDiscover);
     }
 
     private async Task<string?> PickOpenAsync()
