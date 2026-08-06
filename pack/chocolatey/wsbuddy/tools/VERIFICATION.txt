@@ -1,0 +1,21 @@
+VERIFICATION
+Verification is intended to assist the Chocolatey moderators and community
+in verifying that this package's contents are trustworthy.
+
+1. Download the official release assets from:
+   https://github.com/kilrkrow/win-service-buddy/releases/tag/v0.2.0
+
+   - wsbuddy-cli-win-x64-v0.2.0.zip
+   - wsbuddy-app-win-x64-v0.2.0.zip
+
+2. Obtain the SHA256 checksum of each file, for example:
+
+   Get-FileHash .\wsbuddy-cli-win-x64-v0.2.0.zip -Algorithm SHA256
+   Get-FileHash .\wsbuddy-app-win-x64-v0.2.0.zip -Algorithm SHA256
+
+3. Compare to the values used in tools\chocolateyinstall.ps1:
+
+   CLI: 4E1DE17AC51E384E81048AD87E8033A194C1069BAAF656505AE2C3A153E3001B
+   APP: 270B53D9324696A657CB8328940682FED4DFFD7D7FDC8A756D72EB648B39AB53
+
+The package does not embed the binaries; it downloads them from GitHub Releases at install time.
