@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>wsbuddy</id>
+    <version>0.2.0</version>
+    <title>Win Service Buddy</title>
+    <authors>kilrkrow</authors>
+    <projectUrl>https://github.com/kilrkrow/win-service-buddy</projectUrl>
+    <projectSourceUrl>https://github.com/kilrkrow/win-service-buddy</projectSourceUrl>
+    <docsUrl>https://github.com/kilrkrow/win-service-buddy#readme</docsUrl>
+    <bugTrackerUrl>https://github.com/kilrkrow/win-service-buddy/issues</bugTrackerUrl>
+    <packageSourceUrl>https://github.com/kilrkrow/win-service-buddy/tree/main/pack/chocolatey/wsbuddy</packageSourceUrl>
+    <licenseUrl>https://github.com/kilrkrow/win-service-buddy/blob/main/LICENSE</licenseUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <summary>Product-scoped Windows Service management (CLI + GUI)</summary>
+    <description>
+Win Service Buddy manages product-related Windows Services with Simple mode (substring filter) and Profile mode (shareable `.wsb.json` profiles with roles, environments, and start/stop order).
+
+This package installs:
+
+* **wsbuddy.exe** — CLI (added to PATH)
+* **WinServiceBuddy.App.exe** — desktop GUI
+* Example profiles under the package tools directory
+
+## Usage
+
+```text
+wsbuddy list --substring Spooler
+wsbuddy info
+```
+
+Launch the GUI from the Start Menu shortcut or:
+
+```text
+&amp; "$env:ChocolateyInstall\lib\wsbuddy\tools\app\WinServiceBuddy.App.exe"
+```
+
+Service control requires an elevated (Administrator) prompt.
+
+## Project
+
+https://github.com/kilrkrow/win-service-buddy
+    </description>
+    <tags>windows-services admin ops profile scm windows server</tags>
+    <releaseNotes>https://github.com/kilrkrow/win-service-buddy/releases/tag/v0.2.0</releaseNotes>
+    <copyright>Copyright (c) kilrkrow</copyright>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>
