@@ -55,14 +55,3 @@ You’re excused for unknowingly breaking [Notices](#notices) if you take all pr
 ## No Liability
 
 ***As far as the law allows, this software comes as is, without any warranty or condition, and the contributor won’t be liable to anyone for any damages related to this software or this license, under any kind of legal claim.***
-
----
-
-Summary (not a substitute for the licence text above):
-Win Service Buddy is source-available, not open source. Noncommercial use is
-free. Commercial use is limited to a thirty-day trial, after which commercial
-users need a paid licence from the contributor.
-
-SPDX-License-Identifier: Prosperity-3.0.0
-Source: https://github.com/kilrkrow/win-service-buddy
-Canonical licence file: https://github.com/kilrkrow/win-service-buddy/blob/main/LICENSE

@@ -19,6 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\WinServiceBuddy.Cli\WinServiceBuddy.Cli.csproj" />
     <ProjectReference Include="..\..\src\WinServiceBuddy.Core\WinServiceBuddy.Core.csproj" />
   </ItemGroup>
 
