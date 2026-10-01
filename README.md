@@ -51,9 +51,15 @@ Substring filter, multi-select, bulk start/stop/restart, startup type, recovery 
 
 ### Profile mode
 
-First run with no profiles installed: browse/import a `.wsb.json`, or go straight to the Profile Builder via **Build profile…** / **Edit profile…**. Once a profile is selected, **Environment** and **Role** pickers appear below it.
+A loaded profile scoped to the **Application Server** role in the **Production** environment, with its services listed and each one's startup type, recovery preset and dependency count. **Default profile (open this on launch)** pins the profile for the next start; **Browse / import…** takes a `.wsb.json` from elsewhere, and **Build profile…** / **Edit profile…** open the Profile Builder.
 
 ![Profile mode](docs/screenshots/02-profile-mode.png)
+
+### Profile Builder
+
+Authoring a profile in place: product name, id and roles at the top, environments with their default startup/recovery beside them, substring **Discover** results on the left ready to add, and the ordered **Profile services** list (start order top→bottom, stop in reverse) with per-service overrides on the right. **Validate** checks the profile before **Save**.
+
+![Profile Builder](docs/screenshots/03-profile-builder.png)
 
 ---
 
