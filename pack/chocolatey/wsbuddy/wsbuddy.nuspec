@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
   <metadata>
     <id>wsbuddy</id>
-    <version>0.2.0</version>
+    <version>0.2.1</version>
     <title>Win Service Buddy</title>
     <authors>kilrkrow</authors>
     <projectUrl>https://github.com/kilrkrow/win-service-buddy</projectUrl>
@@ -37,12 +37,23 @@ Launch the GUI from the Start Menu shortcut or:
 
 Service control requires an elevated (Administrator) prompt.
 
+## Licence
+
+Prosperity Public License 3.0.0 (SPDX: `Prosperity-3.0.0`). Win Service Buddy is
+source-available, **not** open source:
+
+* Personal, hobby, research and study use — free
+* Charities, educational institutions, public research, public safety/health and government use — free
+* Commercial or organizational use — a thirty-day trial, after which a paid licence from the contributor is required
+
+Full terms: https://github.com/kilrkrow/win-service-buddy/blob/main/LICENSE
+
 ## Project
 
 https://github.com/kilrkrow/win-service-buddy
     </description>
     <tags>windows-services admin ops profile scm windows server</tags>
-    <releaseNotes>https://github.com/kilrkrow/win-service-buddy/releases/tag/v0.2.0</releaseNotes>
+    <releaseNotes>https://github.com/kilrkrow/win-service-buddy/releases/tag/v0.2.1</releaseNotes>
     <copyright>Copyright (c) kilrkrow</copyright>
   </metadata>
   <files>

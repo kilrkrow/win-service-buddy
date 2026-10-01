@@ -168,28 +168,24 @@ dotnet run --project src/WinServiceBuddy.Cli -- profile list
 
 ## Publish (portable)
 
-Build the self-contained `win-x64` payloads:
+Both release ZIPs are built by one script:
 
 ```powershell
-dotnet publish src/WinServiceBuddy.Cli -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:DebugType=none -o artifacts/cli
-dotnet publish src/WinServiceBuddy.App -c Release -r win-x64 --self-contained true -p:DebugType=none -o artifacts/app
+./scripts/publish.ps1
 ```
 
-Then drop debug symbols, add the example profiles and README, and zip with the names used on the Releases page (`$v` comes from `Directory.Build.props`):
+It reads the version from `Directory.Build.props`, publishes self-contained `win-x64` payloads for the GUI and the CLI, strips debug symbols, adds `README.md`, `LICENSE` and the example profiles, and writes the assets used on the Releases page:
 
-```powershell
-$v = ([xml](Get-Content Directory.Build.props)).Project.PropertyGroup.Version
-foreach ($d in 'artifacts/cli','artifacts/app') {
-  Remove-Item "$d/*.pdb" -Force -ErrorAction SilentlyContinue   # native libSkiaSharp.pdb alone is ~84 MB
-  Copy-Item README.md $d
-  Copy-Item profiles/examples $d/profiles -Recurse -Force
-}
-Compress-Archive -Path artifacts/cli/* -DestinationPath "artifacts/wsbuddy-cli-win-x64-v$v.zip" -Force
-Compress-Archive -Path artifacts/app/* -DestinationPath "artifacts/wsbuddy-app-win-x64-v$v.zip" -Force
-Get-FileHash artifacts/*.zip -Algorithm SHA256 | Format-List
-```
+| Asset | Contents |
+| --- | --- |
+| `artifacts/wsbuddy-app-win-x64-vX.Y.Z.zip` | `WinServiceBuddy.App.exe` — the desktop GUI |
+| `artifacts/wsbuddy-cli-win-x64-vX.Y.Z.zip` | `wsbuddy.exe` — the CLI |
 
-`-p:DebugType=none` suppresses the managed `.pdb` files; the native SkiaSharp/HarfBuzz ones ship from NuGet and have to be deleted, which is most of the difference between a ~76 MB and a ~50 MB GUI ZIP.
+The SHA256 of each ZIP is printed at the end; those values are pinned in `pack/chocolatey/wsbuddy/tools/`. Do not rename the assets — the `app`/`cli` token is what downstream launchers use to prefer the GUI.
+
+`-p:DebugType=none` suppresses the managed `.pdb` files, but the native SkiaSharp/HarfBuzz ones ship from NuGet and have to be deleted, which the script does: `libSkiaSharp.pdb` alone is ~84 MB and leaving them takes the GUI ZIP from roughly 50 MB to 76 MB.
+
+The script only builds and hashes; publishing the GitHub release stays a manual step.
 
 Packaging: portable ZIP and Chocolatey (see [`pack/chocolatey/`](pack/chocolatey/README.md)) are in place; MSI is still planned.
 
@@ -205,4 +201,12 @@ Bumping a release means updating `Directory.Build.props` **and** the pinned vers
 
 ## License
 
-No license file yet — all rights reserved until one is added.
+[Prosperity Public License 3.0.0](LICENSE) (`Prosperity-3.0.0`) — source-available, **not** open source.
+
+| Use | Terms |
+| --- | --- |
+| Personal, hobby, research, study | Free |
+| Charities, schools, public research, public safety/health, government | Free |
+| Commercial / organizational | Thirty-day trial, then a paid licence from the contributor is required |
+
+See [`LICENSE`](LICENSE) for the authoritative terms; the table above is only a summary.

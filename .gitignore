@@ -8,3 +8,6 @@ publish/
 TestResults/
 *.log
 .idea/
+
+# Chocolatey pack output (built from pack/chocolatey/wsbuddy/wsbuddy.nuspec)
+*.nupkg

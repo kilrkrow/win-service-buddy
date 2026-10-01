@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 $toolsDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
-$version = '0.2.0'
+$version = '0.2.1'
 $baseUrl = "https://github.com/kilrkrow/win-service-buddy/releases/download/v$version"
 
 $cliZip = Join-Path $toolsDir "wsbuddy-cli-win-x64-v$version.zip"

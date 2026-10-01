@@ -4,6 +4,7 @@ using System.Text.Json;
 using WinServiceBuddy.Core.Models;
 using WinServiceBuddy.Core.Prerequisites;
 using WinServiceBuddy.Core.Profiles;
+using WinServiceBuddy.Cli;
 using WinServiceBuddy.Core.Services;
 
 var manager = new WindowsServiceManager();
@@ -283,12 +284,7 @@ infoCmd.SetAction(_ =>
 var guiCmd = new Command("gui", "Launch the graphical UI (WinServiceBuddy.App)");
 guiCmd.SetAction(_ =>
 {
-    var candidates = new[]
-    {
-        Path.Combine(AppContext.BaseDirectory, "WinServiceBuddy.App.exe"),
-        Path.Combine(AppContext.BaseDirectory, "..", "WinServiceBuddy.App", "WinServiceBuddy.App.exe"),
-        Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "WinServiceBuddy.App", "bin", "Debug", "net10.0", "WinServiceBuddy.App.exe")),
-    };
+    var candidates = GuiLauncher.GetCandidatePaths(AppContext.BaseDirectory);
 
     foreach (var path in candidates)
     {
