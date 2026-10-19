@@ -1,39 +1,33 @@
 # Chocolatey package: `wsbuddy`
 
-Installs Win Service Buddy from the official GitHub Release ZIPs.
+Installs Win Service Buddy from the official GitHub Release ZIPs. Published on the
+community feed as [`wsbuddy`](https://community.chocolatey.org/packages/wsbuddy).
 
-## Pack (local)
+The files in `wsbuddy/` are a template. The version, the two SHA256 checksums and
+`VERIFICATION.txt` are stamped at pack time from the release tag and the built ZIPs by
+`build/choco-pack.ps1`; do not edit them by hand. The `.nupkg` is build output and is
+gitignored; do not commit it.
 
-```powershell
-cd pack/chocolatey/wsbuddy
-choco pack
-```
+## Release (normal path)
 
-Produces `wsbuddy.<version>.nupkg` (the version comes from `wsbuddy.nuspec`). The
-`.nupkg` is build output and is gitignored — do not commit it.
+Push a `vX.Y.Z` tag. `.github/workflows/release.yml` builds both ZIPs, creates the GitHub
+release with the ZIPs and their `.sha256` files, packs this package, install-tests it,
+and pushes it to the community feed (only for a tag without `-`, in
+`kilrkrow/win-service-buddy`, public, with the `CHOCOLATEY_API_KEY` secret set).
 
-## Install from local nupkg
-
-```powershell
-choco install wsbuddy -y --source "'.;https://community.chocolatey.org/api/v2/'"
-# or
-choco install wsbuddy -y -s .
-```
-
-## Push to community feed (maintainers)
+## Pack and test locally
 
 ```powershell
-choco push wsbuddy.<version>.nupkg --source https://push.chocolatey.org/ --api-key <YOUR_KEY>
+powershell -ExecutionPolicy Bypass -File build\release.ps1 -Version v0.2.1
+# Package that downloads from the GitHub release (works once the release is published):
+powershell -ExecutionPolicy Bypass -File build\choco-pack.ps1 -Version v0.2.1
+# Test package that installs from the local release\ folder instead:
+powershell -ExecutionPolicy Bypass -File build\choco-pack.ps1 -Version v0.2.1 -OutDir release\choco-test -BaseUrl "file:///$((Resolve-Path release).Path.Replace('\','/'))"
+choco install wsbuddy -y -s release\choco-test   # elevated prompt
+choco uninstall wsbuddy -y
 ```
-
-Requires a [Chocolatey.org](https://community.chocolatey.org) account and package moderation for first publish.
 
 ## Bumping a version
 
-1. Bump `<Version>` in `Directory.Build.props` at the repo root.  
-2. Run `scripts/publish.ps1` to build both ZIPs; it prints the SHA256 of each.  
-3. Publish GitHub release `vX.Y.Z` with those App/CLI ZIPs attached.  
-4. Update `wsbuddy.nuspec` (`version` and the `releaseNotes` URL).  
-5. Update `$version` and both SHA256 values in `tools/chocolateyinstall.ps1`.  
-6. Update `tools/VERIFICATION.txt`.  
-7. `choco pack` and push.
+1. Bump `<Version>` in `Directory.Build.props` at the repo root.
+2. Merge, then tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.

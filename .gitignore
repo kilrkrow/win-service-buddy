@@ -11,3 +11,6 @@ TestResults/
 
 # Chocolatey pack output (built from pack/chocolatey/wsbuddy/wsbuddy.nuspec)
 *.nupkg
+
+# Release spine output (build/release.ps1, build/choco-pack.ps1)
+release/

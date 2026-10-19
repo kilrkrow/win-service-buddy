@@ -11,10 +11,11 @@ $appOut = Join-Path $toolsDir 'app'
 $cliUrl = "$baseUrl/wsbuddy-cli-win-x64-v$version.zip"
 $appUrl = "$baseUrl/wsbuddy-app-win-x64-v$version.zip"
 
-# SHA256 of the official v0.2.1 GitHub release assets, as produced by scripts/publish.ps1.
-# Re-run that script and repin both values whenever the release assets are rebuilt.
-$cliChecksum = '8D33978C37A4126976915F9E3D980C80A1D2D65B04F67ED8584AD29E541543CE'
-$appChecksum = '7F285B8203901FB25646A98BF9A05226E4097827506BF3FC25B6B4034103B73C'
+# SHA256 of the GitHub release assets for $version. build/choco-pack.ps1 stamps
+# $version and both checksums from the release tag and the built ZIPs; the
+# values committed here are placeholders.
+$cliChecksum = 'STAMPED-BY-build/choco-pack.ps1'
+$appChecksum = 'STAMPED-BY-build/choco-pack.ps1'
 
 Get-ChocolateyWebFile -PackageName 'wsbuddy' -FileFullPath $cliZip -Url $cliUrl `
   -Checksum $cliChecksum -ChecksumType 'sha256'

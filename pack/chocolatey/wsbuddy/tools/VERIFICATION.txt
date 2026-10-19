@@ -15,8 +15,8 @@ in verifying that this package's contents are trustworthy.
 
 3. Compare to the values used in tools\chocolateyinstall.ps1:
 
-   CLI: 8D33978C37A4126976915F9E3D980C80A1D2D65B04F67ED8584AD29E541543CE
-   APP: 7F285B8203901FB25646A98BF9A05226E4097827506BF3FC25B6B4034103B73C
+   CLI: <stamped by build/choco-pack.ps1>
+   APP: <stamped by build/choco-pack.ps1>
 
 The package does not embed the binaries; it downloads them from GitHub Releases at install time.
 

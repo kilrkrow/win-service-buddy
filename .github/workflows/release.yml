@@ -1,0 +1,222 @@
+name: Release
+
+# Release spine for Win Service Buddy.
+#   git tag v1.2.3 && git push origin v1.2.3
+# runs the tests, builds both release ZIPs with build/release.ps1 (the same
+# script used locally), attaches them plus their .sha256 files to a GitHub
+# release, packs and install-tests the Chocolatey package (id: wsbuddy), and
+# pushes it to the Chocolatey community feed only for a real release.
+#
+# Safety gates for the Chocolatey push (all must hold, otherwise it is skipped
+# with a log line saying why, and the step exits 0):
+#   - tag has no '-' (v1.2.3-rc.1, v0.0.0-test etc. are prereleases: the
+#     GitHub release is created as a DRAFT prerelease and nothing is pushed)
+#   - the run is in kilrkrow/win-service-buddy itself (not a fork)
+#   - the repository is public
+#   - the CHOCOLATEY_API_KEY secret exists
+#
+# The steps only read the env block below plus the build/*.ps1 scripts, so
+# they can move into a shared reusable workflow later without changes.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CANONICAL_REPO: kilrkrow/win-service-buddy
+  CHOCO_ID: wsbuddy
+  CHOCO_PREVIOUS_VERSION: '0.2.0'
+  DOTNET_NOLOGO: '1'
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+
+jobs:
+  release:
+    name: Build, release, package
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Resolve release metadata
+        id: meta
+        env:
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+          REPO_PRIVATE: ${{ github.event.repository.private }}
+        run: |
+          if ($env:TAG -notmatch '^v(\d+\.\d+\.\d+)(-[0-9A-Za-z][0-9A-Za-z.-]*)?$') {
+            throw "Tag '$env:TAG' is not a release tag like v1.2.3 or v1.2.3-rc.1"
+          }
+          $isPrerelease = $env:TAG.Contains('-')
+          $isCanonical = $env:REPO -eq $env:CANONICAL_REPO
+          $isPublic = $env:REPO_PRIVATE -eq 'false'
+          Write-Host "tag=$env:TAG prerelease=$isPrerelease canonical_repo=$isCanonical public=$isPublic"
+          Add-Content $env:GITHUB_OUTPUT -Encoding ascii -Value @(
+            "tag=$env:TAG",
+            "version=$($env:TAG.Substring(1))",
+            "prerelease=$($isPrerelease.ToString().ToLowerInvariant())",
+            "canonical=$($isCanonical.ToString().ToLowerInvariant())",
+            "public=$($isPublic.ToString().ToLowerInvariant())")
+
+      - name: Test
+        run: |
+          dotnet test WinServiceBuddy.slnx -c Release
+          if ($LASTEXITCODE -ne 0) { throw "dotnet test failed with exit code $LASTEXITCODE" }
+
+      - name: Build and zip (build/release.ps1)
+        id: build
+        run: ./build/release.ps1 -Version '${{ steps.meta.outputs.tag }}'
+
+      - name: Verify sha256 files match zips
+        env:
+          FILES: ${{ steps.build.outputs.app_zip }}|${{ steps.build.outputs.cli_zip }}
+        run: |
+          foreach ($zip in $env:FILES.Split('|')) {
+            $expected = ((Get-Content -LiteralPath "$zip.sha256" -Raw).Trim() -split '\s+')[0]
+            $actual = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($expected -ne $actual) { throw "sha256 mismatch for $zip" }
+            Write-Host "sha256 OK: $actual  $(Split-Path $zip -Leaf)"
+          }
+
+      - name: Create GitHub release and attach zips + sha256
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          PRERELEASE: ${{ steps.meta.outputs.prerelease }}
+          APP_ZIP: ${{ steps.build.outputs.app_zip }}
+          CLI_ZIP: ${{ steps.build.outputs.cli_zip }}
+        run: |
+          $assets = @($env:APP_ZIP, "$env:APP_ZIP.sha256", $env:CLI_ZIP, "$env:CLI_ZIP.sha256")
+          gh release view $env:TAG --json tagName 2>$null | Out-Null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Release $env:TAG already exists; uploading assets to it."
+            gh release upload $env:TAG @assets --clobber
+          } else {
+            $releaseArgs = @('release', 'create', $env:TAG) + $assets + @(
+                             '--verify-tag', '--title', "Win Service Buddy $env:TAG", '--generate-notes')
+            if ($env:PRERELEASE -eq 'true') {
+              Write-Host "Prerelease/test tag: creating a DRAFT prerelease (not public)."
+              $releaseArgs += @('--draft', '--prerelease')
+            }
+            gh @releaseArgs
+          }
+          if ($LASTEXITCODE -ne 0) { throw "gh release failed with exit code $LASTEXITCODE" }
+
+      - name: Pack Chocolatey package (build/choco-pack.ps1)
+        id: pack
+        run: ./build/choco-pack.ps1 -Version '${{ steps.meta.outputs.tag }}'
+
+      - name: Pack local-source test package (same scripts, file:/// download URL)
+        id: packtest
+        env:
+          RELEASE_DIR: ${{ steps.build.outputs.release_dir }}
+        run: |
+          $baseUrl = 'file:///' + $env:RELEASE_DIR.Replace('\', '/')
+          ./build/choco-pack.ps1 -Version '${{ steps.meta.outputs.tag }}' -OutDir release/choco-test -BaseUrl $baseUrl
+
+      - name: Validate Chocolatey package (install, smoke test, uninstall, check)
+        env:
+          PKG_DIR: ${{ steps.packtest.outputs.test_package_dir }}
+          PKG_VERSION: ${{ steps.packtest.outputs.package_version }}
+        run: |
+          $lib = Join-Path $env:ChocolateyInstall "lib\$env:CHOCO_ID"
+          $shim = Join-Path $env:ChocolateyInstall 'bin\wsbuddy.exe'
+          $lnk = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Win Service Buddy.lnk'
+
+          choco install $env:CHOCO_ID --source $env:PKG_DIR --version $env:PKG_VERSION --pre -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw "choco install failed with exit code $LASTEXITCODE" }
+          foreach ($p in @("$lib\tools\app\WinServiceBuddy.App.exe", "$lib\tools\cli\wsbuddy.exe", $shim, $lnk)) {
+            if (-not (Test-Path $p)) { throw "after install: $p is missing" }
+          }
+          # Read-only smoke test of the shimmed CLI (lists services, changes nothing).
+          & $shim list --substring Spooler
+          if ($LASTEXITCODE -ne 0) { throw "wsbuddy list failed with exit code $LASTEXITCODE" }
+          Write-Host "install OK: $lib"
+
+          choco uninstall $env:CHOCO_ID -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw "choco uninstall failed with exit code $LASTEXITCODE" }
+          $left = @($lib, $shim, $lnk) | Where-Object { Test-Path $_ }
+          if ($left) { throw "after uninstall, leftovers: $($left -join ', ')" }
+          Write-Host "uninstall OK: no leftovers"
+
+      - name: Validate upgrade from the previous community package
+        env:
+          PKG_DIR: ${{ steps.packtest.outputs.test_package_dir }}
+          PKG_VERSION: ${{ steps.packtest.outputs.package_version }}
+        run: |
+          # Read-only use of the community feed: install the previous published
+          # version, upgrade to this package, then uninstall.
+          $lib = Join-Path $env:ChocolateyInstall "lib\$env:CHOCO_ID"
+          $shim = Join-Path $env:ChocolateyInstall 'bin\wsbuddy.exe'
+          choco install $env:CHOCO_ID --version $env:CHOCO_PREVIOUS_VERSION --source https://community.chocolatey.org/api/v2/ -y --no-progress
+          if ($LASTEXITCODE -ne 0) {
+            Write-Warning "Could not install $env:CHOCO_ID $env:CHOCO_PREVIOUS_VERSION from the community feed; upgrade test skipped."
+            exit 0
+          }
+          choco upgrade $env:CHOCO_ID --source $env:PKG_DIR --version $env:PKG_VERSION --pre -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw "choco upgrade failed with exit code $LASTEXITCODE" }
+          $info = (Get-Item "$lib\tools\cli\wsbuddy.exe").VersionInfo.ProductVersion
+          Write-Host "upgraded CLI ProductVersion: $info"
+          if (-not $info.StartsWith($env:PKG_VERSION)) { throw "after upgrade: CLI version is $info, expected $env:PKG_VERSION" }
+          choco uninstall $env:CHOCO_ID -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw "choco uninstall failed with exit code $LASTEXITCODE" }
+          if ((Test-Path $lib) -or (Test-Path $shim)) { throw "after uninstall: leftovers" }
+          Write-Host "upgrade OK: $env:CHOCO_PREVIOUS_VERSION -> $env:PKG_VERSION, then clean uninstall"
+
+      - name: Validate the release package against the published assets (real releases only)
+        if: steps.meta.outputs.prerelease == 'false'
+        env:
+          PKG_DIR: ${{ steps.pack.outputs.package_dir }}
+          PKG_VERSION: ${{ steps.pack.outputs.package_version }}
+        run: |
+          choco install $env:CHOCO_ID --source $env:PKG_DIR --version $env:PKG_VERSION -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw "choco install of the release package failed with exit code $LASTEXITCODE" }
+          choco uninstall $env:CHOCO_ID -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw "choco uninstall failed with exit code $LASTEXITCODE" }
+          Write-Host "release package OK: downloads and checksums match the published assets"
+
+      - name: Upload Chocolatey package as workflow artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wsbuddy-nupkg-${{ steps.meta.outputs.tag }}
+          path: ${{ steps.pack.outputs.nupkg }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Push to Chocolatey community feed (gated)
+        env:
+          CHOCO_KEY: ${{ secrets.CHOCOLATEY_API_KEY }}
+          NUPKG: ${{ steps.pack.outputs.nupkg }}
+          PRERELEASE: ${{ steps.meta.outputs.prerelease }}
+          CANONICAL: ${{ steps.meta.outputs.canonical }}
+          PUBLIC: ${{ steps.meta.outputs.public }}
+        run: |
+          $skip = @()
+          if ($env:PRERELEASE -ne 'false') { $skip += "tag is a prerelease/test tag" }
+          if ($env:CANONICAL -ne 'true') { $skip += "run is not in $env:CANONICAL_REPO" }
+          if ($env:PUBLIC -ne 'true') { $skip += "repository is not public" }
+          if ([string]::IsNullOrEmpty($env:CHOCO_KEY)) { $skip += "secret CHOCOLATEY_API_KEY is not set" }
+          if ($skip.Count) {
+            Write-Host "Chocolatey push SKIPPED: $($skip -join '; '). Package was packed and validated: $env:NUPKG"
+            exit 0
+          }
+          Write-Host "Pushing $env:NUPKG to https://push.chocolatey.org/"
+          choco push $env:NUPKG --source https://push.chocolatey.org/ --api-key $env:CHOCO_KEY
+          if ($LASTEXITCODE -ne 0) { throw "choco push failed with exit code $LASTEXITCODE" }
