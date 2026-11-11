@@ -27,13 +27,13 @@ Both are **self-contained**: no .NET runtime install required. Unblock the ZIP (
 
 ### Chocolatey
 
-A Chocolatey package (`wsbuddy`) that downloads the release ZIPs lives in [`pack/chocolatey/`](pack/chocolatey/README.md). It is not on the community feed yet, so pack and install it locally:
+Win Service Buddy is on the Chocolatey community feed as [`wsbuddy`](https://community.chocolatey.org/packages/wsbuddy); the package downloads the release ZIPs and checks their SHA256:
 
 ```powershell
-cd pack/chocolatey/wsbuddy
-choco pack
-choco install wsbuddy -y -s .
+choco install wsbuddy -y
 ```
+
+The package source lives in [`pack/chocolatey/`](pack/chocolatey/README.md), which also shows how to pack and test it locally.
 
 ### Build from source
 
@@ -191,7 +191,7 @@ The SHA256 of each ZIP is printed at the end; those values are pinned in `pack/c
 
 `-p:DebugType=none` suppresses the managed `.pdb` files, but the native SkiaSharp/HarfBuzz ones ship from NuGet and have to be deleted, which the script does: `libSkiaSharp.pdb` alone is ~84 MB and leaving them takes the GUI ZIP from roughly 50 MB to 76 MB.
 
-The script only builds and hashes; publishing the GitHub release stays a manual step.
+The script also writes a `.sha256` file next to each ZIP. It only builds and hashes; releases are published by the tag-triggered workflow (see Releasing below).
 
 Packaging: portable ZIP and Chocolatey (see [`pack/chocolatey/`](pack/chocolatey/README.md)) are in place; MSI is still planned.
 
@@ -201,7 +201,29 @@ Packaging: portable ZIP and Chocolatey (see [`pack/chocolatey/`](pack/chocolatey
 
 The current version lives in `Directory.Build.props`; shipped versions are the `vX.Y.Z` git tags and the [Releases](https://github.com/kilrkrow/win-service-buddy/releases) page.
 
-Bumping a release means updating `Directory.Build.props` **and** the pinned version/checksums under `pack/chocolatey/wsbuddy/` — see that package's [README](pack/chocolatey/README.md).
+Bumping a release means updating `<Version>` in `Directory.Build.props`. The Chocolatey version and checksums are stamped from the tag at release time.
+
+---
+
+## Releasing
+
+Releases are cut by pushing a version tag:
+
+```bash
+git tag v0.2.1
+git push origin v0.2.1
+```
+
+The [Release workflow](.github/workflows/release.yml) runs the tests, builds both ZIPs with `build/release.ps1`, creates the GitHub release with the ZIPs and their `.sha256` files, packs the `wsbuddy` Chocolatey package, test-installs and uninstalls it, checks an upgrade from the previous community version, and pushes it to the Chocolatey community feed.
+
+Tags containing `-` (for example `v0.2.1-rc.1`) are test/prerelease tags: the GitHub release is created as a draft prerelease and the Chocolatey push is skipped. The push is also skipped on forks, if the repository is private, or if the `CHOCOLATEY_API_KEY` secret is missing; the log says which.
+
+To build the same ZIPs and `.sha256` files locally (output goes to the git-ignored `release\` folder):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File build\release.ps1              # version from Directory.Build.props
+powershell -ExecutionPolicy Bypass -File build\release.ps1 -Version v0.2.1
+```
 
 ---
 
